@@ -1,7 +1,7 @@
 
 #include "SLK.h"
 
-//TO DO: passaggio max bandwidth da esterno, gestione errori(anche negli spinlock), controllare header ethernet, controllare se dopo l'esecuzione della magic formula la divisione per 20 è adatta, controllare se il controllo tot_pkt_count == 1 non serve,endian ntohl utili solo per la stampa?, test checksum, controllo calcolo banda UDP poichè salvato in byte e non kbye uguale per la banda media
+//TO DO: passaggio max bandwidth da esterno, gestione errori(anche negli spinlock), controllare header ethernet, controllare se dopo l'esecuzione della magic formula la divisione per 20 è adatta, controllare se il controllo tot_pkt_count == 1 non serve
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -13,10 +13,10 @@ static struct nf_hook_ops nfho;
 /*********************************************************************************************************
  VARIABILI DEL PROGRAMMA UTILI A SLK:
  max_bwt: Max bandwidth usata per la formula del programma, passata esternamente
- last_udp_traffic: Valore del traffico UPD in KByte l'ultima volta che è stato verificato
- udp_traffic: Valore del traffico UDP totale in KByte
+ last_udp_traffic: Valore del traffico UPD in Byte l'ultima volta che è stato verificato
+ udp_traffic: Valore del traffico UDP totale in Byte
  num_tcp_flows: numero di flussi TCP attualmente passanti
- udp_avg_bdw: bandwidth media in Byte/ms utilizzata per il calcolo della formula
+ udp_avg_bdw: bandwidth media in KB/s utilizzata per il calcolo della formula
  new_adv_wnd: valore dell'advertised window di TCP calcolata con SAP-LAW
  const_adv_wnd: variabile che contiene un eventuale valore fisso della adverstised windows impostato dall'utente
  last_check: indica quando è stata calcolata per l'ultima volta la bandwidth UPD
@@ -99,7 +99,7 @@ static int slk_check_update_SL(void)
 static void slk_udp_handle(struct iphdr *ip, struct udphdr *udp)
 {
     spin_lock(&lock_udp_traffic); //blocco ulteriori accessi alla risorsa udp_traffic
-    udp_traffic += (ip->tot_len + 14); //aggiungo al traffico UDP la grandezza di questo pacchetto, comprende oltre al pacchetto UDP anche l'header IP e l'header ethernet (14)
+    udp_traffic += ( ntohs( (u_int16_t) ip->tot_len) + 14 ); //aggiungo al traffico UDP la grandezza di questo pacchetto, comprende oltre al pacchetto UDP anche l'header IP e l'header ethernet (14)
     spin_unlock(&lock_udp_traffic); //libero la risorsa
 }
 
@@ -137,20 +137,20 @@ static u_int16_t slk_calc_chksum_buf(u_int16_t *packet, int packlen) {
 static void slk_calc_check(struct iphdr *ip, struct tcphdr *tcp)
 {
     //RESET CHECKSUM
-    u_int16_t tcp_tot_len = ip->tot_len - 20; //calcola lunghezza segmento TCP
-    u8 *buf=kmalloc(12 + tcp_tot_len,GFP_KERNEL); //buffer contenente lo pseudo header TCP
+    u_int16_t tcp_tot_len = ntohs( (u_int16_t) ip->tot_len) - 20; //calcola lunghezza segmento TCP
+    u8 *buf=kmalloc(12 + tcp_tot_len,GFP_KERNEL); //buffer contenente lo pseudo header TCP(12 byte)
     
     //Inizializzazione dello pseudo header
     (void *)memcpy(buf, &(ip->saddr), sizeof(u_int32_t));	// Indirizzo di provenienza IP dello pseudo header
     (void *)memcpy(&(buf[4]), &(ip->daddr), sizeof(u_int32_t));	// Indirizzo di destinazione IP dello pseud header
     buf[8] = 0;							// Reserved location dello pseudo header
-    buf[9] = ip->protocol;			// Protocollo di trasoporto dello pseudo header
-    buf[10]=(u_int16_t)((tcp_tot_len) & 0xFF00) >> 8;	// Lunghezza totale header TCP salvata sullo pseudo header
+    buf[9] = ip->protocol;			// Protocollo di trasporto dello pseudo header
+    buf[10]=(u_int16_t)((tcp_tot_len) & 0xFF00) >> 8;	// Lunghezza totale header TCP salvata sullo pseudo header, traslo per simulare il big endian
     buf[11]=(u_int16_t)((tcp_tot_len) & 0x00FF);
     
     tcp->check = 0; //imposto il valore del check a 0 per il suo ricalcolo
     (void *)memcpy(buf + 12, tcp, tcp_tot_len ); //copio il pacchetto tcp nel buffer
-    tcp->check = slk_calc_chksum_buf((u_int16_t *)buf, 12 + tcp_tot_len); //Ricalcolo del checksum
+    tcp->check = htons( slk_calc_chksum_buf((u_int16_t *)buf, 12 + tcp_tot_len) ); //Ricalcolo del checksum
     kfree(buf); //libera la memoria allocata
 }
 
@@ -184,7 +184,7 @@ static void slk_tcp_handle(struct iphdr *ip, struct tcphdr *tcp)
         slk_calc_check(ip,tcp); //calcola il nuovo valore del checksum del pacchetto modificato
         
         spin_lock(&lock_mod_pkt_count);
-        mod_pkt_count++; //aumenta il contore dei pacchetti modificati
+        mod_pkt_count++; //aumenta il contatore dei pacchetti modificati
         spin_unlock(&lock_mod_pkt_count);
     }
 }
@@ -245,7 +245,7 @@ static void slk_udp_bdw_update(long dt)
     //Calcolo della bandwidth UDP
     if (dt > 0)
     {
-        actual_udp_bdw = (unsigned long)((ntohs(udp_traffic) - ntohs(last_udp_traffic)) ) / dt; //Byte/ms
+        actual_udp_bdw = (unsigned long)(udp_traffic - last_udp_traffic)  / dt; //Byte/ms->Kbyte/s
     }
     // Modifica della banda UDP in base a necessità dinamiche
     if (last_udp_traffic <= 0) //se è la prima volta che è modificato o se c'è stato poco traffico
@@ -304,12 +304,12 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
     
     res=slk_check_update_SL(); //aggiorna il contatore dei pacchetti e controlla se occorre aggiornare i parametri di gestione del traffico
 #ifdef DEBUG //DEBUG
-   // printk(KERN_INFO "*****DEBUG***** tot_pkt_count: %d \n",tot_pkt_count);
+    printk(KERN_INFO "*****DEBUG***** tot_pkt_count: %d \n",tot_pkt_count);
 #endif
     
     ip=ip_hdr(skb); //prende l'header IP dal buffer skb
 #ifdef DEBUG //DEBUG
- //   printk(KERN_INFO "*****DEBUG***** Header IP \t source: %pI4 \t destination: %pI4\t lenght:%u byte \n",&(ip->saddr),&(ip->daddr),ntohs(ip->tot_len)); //%pI4 permette la stampa dell'indirizzo in formato leggibile, occorre passargli il reference alla variabile
+    printk(KERN_INFO "*****DEBUG***** Header IP \t source: %pI4 \t destination: %pI4\t lenght:%u byte \n",&(ip->saddr),&(ip->daddr),ntohs(ip->tot_len)); //%pI4 permette la stampa dell'indirizzo in formato leggibile, occorre passargli il reference alla variabile
 #endif
     
     switch (ip->protocol) //Controllo sul protocollo di trasporto
@@ -318,17 +318,17 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
             udp=udp_hdr(skb); //prende l'header UPD dal buffer skb
             slk_udp_handle(ip,udp);
 #ifdef DEBUG //DEBUG
-         //   printk(KERN_INFO "*****DEBUG***** Pacchetto UDP \t source:%u \t destination:%u \t lenght:%u byte\n",ntohs(udp->source),ntohs(udp->dest), ntohs(udp->len));
-         //   printk(KERN_INFO "*****DEBUG***** udp_traffic: %d \n",udp_traffic);
+            printk(KERN_INFO "*****DEBUG***** Pacchetto UDP \t source:%u \t destination:%u \t lenght:%u byte\n",ntohs(udp->source),ntohs(udp->dest), ntohs(udp->len));
+            printk(KERN_INFO "*****DEBUG***** udp_traffic: %d \n",udp_traffic);
 #endif
             break;
             
         case 6: //TCP
             tcp=tcp_hdr(skb); //prende l'header TCP dal buffer skb
-            slk_tcp_handle(ip,tcp);
+            //slk_tcp_handle(ip,tcp);
 #ifdef DEBUG //DEBUG
-         //   printk(KERN_INFO "*****DEBUG***** Pacchetto TCP \t source:%d \t destination:%d \n",ntohs(tcp->source),ntohs(tcp->dest));
-         //   printk(KERN_INFO "*****DEBUG***** mod_pkt_count: %d \n",mod_pkt_count);
+            printk(KERN_INFO "*****DEBUG***** Pacchetto TCP \t source:%d \t destination:%d \n",ntohs(tcp->source),ntohs(tcp->dest));
+            printk(KERN_INFO "*****DEBUG***** mod_pkt_count: %d \n",mod_pkt_count);
 #endif
             break;
             
@@ -385,7 +385,7 @@ static void slk_init_data(void)
     max_bwt=100;
     last_udp_traffic = 0; //Valore del traffico UDP all'ultima lettura
     udp_traffic = 0;  //traffico UDP
-    num_tcp_flows = 0;    //numero flussi TCP
+    num_tcp_flows = 2;    //numero flussi TCP
     udp_avg_bdw = 0;  //Bandwidht UDP
     new_adv_wnd = 0;  //Advertised windows
     const_adv_wnd = -1; //parametro contenente il valore della advertised windows se è impostato come fisso
