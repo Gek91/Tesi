@@ -1,34 +1,7 @@
 
-//Header per la programmazione kernel
-#include <linux/kernel.h>
-#include <linux/module.h>
-//Header per la manipolazione dei pacchetti
-#include <linux/netfilter_ipv4.h>
-#include <linux/skbuff.h>
-#include <linux/udp.h>
-#include <linux/tcp.h>
-#include <linux/ip.h>
+#include "SLK.h"
 
-#include <linux/moduleparam.h> //Necessario per la lettura di parametri in ingresso al programma
-
-#include <linux/errno.h> //Definisce alcuni codici di errore
-
-#include <linux/time.h> //per la gestione dei timer
-
-#include <linux/spinlock.h> //per la definizione degli spinlock
-
-#include <linux/types.h> //Necessario per usare dei tipi di dato in formato kernel
-
-#include <linux/slab.h> //necessario per la kmalloc
-#include <linux/gfp.h> //flag della kmalloc , DA VERIFICARE
-
-#include <linux/string.h> //per la memcpy
-
-
-#define SLUS_TRAFFIC_STAT_TIMER_UP 3000
-#define SLUS_TRAFFIC_STAT_TIMER_DOWN 1500
-
-//TO DO: passaggio max bandwidth da esterno, gestione errori(anche negli spinlock), controllare header ethernet, controllare se dopo l'esecuzione della magic formula la divisione per 20 è adatta, controllare se il controllo tot_pkt_count == 1 non serve, mancano dati tcp nel checksum, endian ntohl utili solo per la stampa?, test checksum
+//TO DO: passaggio max bandwidth da esterno, gestione errori(anche negli spinlock), controllare header ethernet, controllare se dopo l'esecuzione della magic formula la divisione per 20 è adatta, controllare se il controllo tot_pkt_count == 1 non serve,endian ntohl utili solo per la stampa?, test checksum, controllo calcolo banda UDP poichè salvato in byte e non kbye uguale per la banda media
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,7 +16,7 @@ static struct nf_hook_ops nfho;
  last_udp_traffic: Valore del traffico UPD in KByte l'ultima volta che è stato verificato
  udp_traffic: Valore del traffico UDP totale in KByte
  num_tcp_flows: numero di flussi TCP attualmente passanti
- udp_avg_bdw: bandwidth media in KByte utilizzata per il calcolo della formula
+ udp_avg_bdw: bandwidth media in Byte/ms utilizzata per il calcolo della formula
  new_adv_wnd: valore dell'advertised window di TCP calcolata con SAP-LAW
  const_adv_wnd: variabile che contiene un eventuale valore fisso della adverstised windows impostato dall'utente
  last_check: indica quando è stata calcolata per l'ultima volta la bandwidth UPD
@@ -110,7 +83,7 @@ static int slk_check_update_SL(void)
     int res; //Variabile ausiliaria usata per controllare se occorre aggiornare i parametri con SAP-LAW
     spin_lock(&lock_tot_pkt_count); // Prenota le risorse tot_pkt_count e Traffic_stat_timer
     read_lock(&rwlock_traffic_stat_timer);
-    tot_pkt_count++; //aggionra il contatore dei pacchetti
+    tot_pkt_count++; //aggiorna il contatore dei pacchetti
     res = tot_pkt_count % traffic_stat_timer; //controlla se occorre eseguire SAP-LAW
     read_unlock(&rwlock_traffic_stat_timer);
     spin_unlock(&lock_tot_pkt_count); //Libera le risorse utilizzate
@@ -128,8 +101,6 @@ static void slk_udp_handle(struct iphdr *ip, struct udphdr *udp)
     spin_lock(&lock_udp_traffic); //blocco ulteriori accessi alla risorsa udp_traffic
     udp_traffic += (ip->tot_len + 14); //aggiungo al traffico UDP la grandezza di questo pacchetto, comprende oltre al pacchetto UDP anche l'header IP e l'header ethernet (14)
     spin_unlock(&lock_udp_traffic); //libero la risorsa
-    
-    //printk(KERN_INFO "Pacchetto UDP \t source:%u \t destination:%u \t lenght:%u byte \n",udp->source,udp->dest, udp->len);
 }
 
 /************************************************************************************************************
@@ -195,16 +166,16 @@ static void slk_tcp_handle(struct iphdr *ip, struct tcphdr *tcp)
     if (const_adv_wnd < 0)// se non è impostato un valore fisso di advertised window
     {
         read_lock(&rwlock_new_adv_wnd); //Riserva in lettura la risorsa new_adv_wnd
-        if( tcp->window > (u_int16_t)new_adv_wnd ) //imposta il valore minore tra quello attuale e quello calcolato
+        if( ntohs (tcp->window) > (u_int16_t)new_adv_wnd ) //imposta il valore minore tra quello attuale e quello calcolato
         {
-            tcp->window = (u_int16_t) new_adv_wnd;
+            tcp->window = htons ((u_int16_t) new_adv_wnd);
             mod++;
         }
         read_unlock(&rwlock_new_adv_wnd); // Rilascia la risorsa new_adv_wnd
     }
     else
     {
-        tcp->window = (u_int16_t) const_adv_wnd; //imposta il valore fisso definito dall'utente
+        tcp->window =htons ( (u_int16_t) const_adv_wnd); //imposta il valore fisso definito dall'utente
         mod++;
     }
     
@@ -216,8 +187,6 @@ static void slk_tcp_handle(struct iphdr *ip, struct tcphdr *tcp)
         mod_pkt_count++; //aumenta il contore dei pacchetti modificati
         spin_unlock(&lock_mod_pkt_count);
     }
-    
-    //printk(KERN_INFO "Pacchetto TCP \t source:%d \t destination:%d\n",tcp->source,tcp->dest);
 }
 
 /************************************************************************************************************
@@ -276,7 +245,7 @@ static void slk_udp_bdw_update(long dt)
     //Calcolo della bandwidth UDP
     if (dt > 0)
     {
-        actual_udp_bdw = (unsigned long)((udp_traffic - last_udp_traffic) * 1000UL) / dt;
+        actual_udp_bdw = (unsigned long)((ntohs(udp_traffic) - ntohs(last_udp_traffic)) ) / dt; //Byte/ms
     }
     // Modifica della banda UDP in base a necessità dinamiche
     if (last_udp_traffic <= 0) //se è la prima volta che è modificato o se c'è stato poco traffico
@@ -301,8 +270,12 @@ static void slk_magic_formula(void)
     spin_lock(&lock_num_tcp_flows); //Riserva la risorsa num_tcp_flows
     write_lock(&rwlock_new_adv_wnd); //Riserva il scrittura la risorsa new_adv_wnd
     //Calcolo della Magic Formula della SAP-LAW
-    new_adv_wnd = ( max_bwt - udp_avg_bdw ) / num_tcp_flows;
-    
+    if(num_tcp_flows!=0) //se il numero dei flussi TCP è diverso da 0
+    {
+        new_adv_wnd = ( max_bwt - udp_avg_bdw ) / num_tcp_flows;
+    }
+    else
+        new_adv_wnd=0;
     if( new_adv_wnd > 65535 ) //TCP advertised windows ha valori da 0 a 65535
         new_adv_wnd = 65535;
         else
@@ -319,6 +292,7 @@ static void slk_magic_formula(void)
 
 unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in, const struct net_device *out, int (*okfn)(struct sk_buff *))
 {
+    
     //Strutture dati per la manipolazione dei pacchetti
     struct iphdr *ip  = NULL;
     struct udphdr *udp = NULL;
@@ -329,21 +303,33 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
         return NF_DROP;
     
     res=slk_check_update_SL(); //aggiorna il contatore dei pacchetti e controlla se occorre aggiornare i parametri di gestione del traffico
+#ifdef DEBUG //DEBUG
+   // printk(KERN_INFO "*****DEBUG***** tot_pkt_count: %d \n",tot_pkt_count);
+#endif
     
     ip=ip_hdr(skb); //prende l'header IP dal buffer skb
-    
-    //printk(KERN_INFO "Header IP \t source: %pI4 \t destination: %pI4 \t lenght:%u byte \n",&(ip->saddr),&(ip->daddr),ip->tot_len); //%pI4 permette la stampa dell'indirizzo in formato leggibile, occorre passargli il reference alla variabile
+#ifdef DEBUG //DEBUG
+ //   printk(KERN_INFO "*****DEBUG***** Header IP \t source: %pI4 \t destination: %pI4\t lenght:%u byte \n",&(ip->saddr),&(ip->daddr),ntohs(ip->tot_len)); //%pI4 permette la stampa dell'indirizzo in formato leggibile, occorre passargli il reference alla variabile
+#endif
     
     switch (ip->protocol) //Controllo sul protocollo di trasporto
     {
         case 17: //UDP
             udp=udp_hdr(skb); //prende l'header UPD dal buffer skb
             slk_udp_handle(ip,udp);
+#ifdef DEBUG //DEBUG
+         //   printk(KERN_INFO "*****DEBUG***** Pacchetto UDP \t source:%u \t destination:%u \t lenght:%u byte\n",ntohs(udp->source),ntohs(udp->dest), ntohs(udp->len));
+         //   printk(KERN_INFO "*****DEBUG***** udp_traffic: %d \n",udp_traffic);
+#endif
             break;
             
         case 6: //TCP
             tcp=tcp_hdr(skb); //prende l'header TCP dal buffer skb
             slk_tcp_handle(ip,tcp);
+#ifdef DEBUG //DEBUG
+         //   printk(KERN_INFO "*****DEBUG***** Pacchetto TCP \t source:%d \t destination:%d \n",ntohs(tcp->source),ntohs(tcp->dest));
+         //   printk(KERN_INFO "*****DEBUG***** mod_pkt_count: %d \n",mod_pkt_count);
+#endif
             break;
             
         default:
@@ -358,11 +344,17 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
         long dt; //Differenza temporale dall'ultimo check
         dt=slk_calc_df(); //calcola la differenza temporale tra l'ultimo check e l'ora attuale aggiornando l'ultimo check
         slk_update_tst(dt); //aggiorna il valore di traffic_stat_timer in relazione a dt
+#ifdef DEBUG //DEBUG
+        printk(KERN_INFO "*****DEBUG***** traffic_stat_timer: %d pkt \t dt : %ld ms \n",traffic_stat_timer,dt);
+#endif
         
         spin_lock(&lock_udp_avg_bdw);   //Riserva la risorsa udp_avg_bdw
         slk_udp_bdw_update(dt); //aggiorna il valore della banda UDP passante al momento
         slk_magic_formula(); //Esegue il calcolo della dimensione della advertised window
         spin_unlock(&lock_udp_avg_bdw); //rilascio della risorsa udp_avg_bdw
+#ifdef DEBUG //DEBUG
+        printk(KERN_INFO "*****DEBUG***** udp_avg_bdw: %d \t new_adv_wnd : %d \n",udp_avg_bdw,new_adv_wnd);
+#endif
     }
     return NF_ACCEPT; //accetta tutti i pacchetti, possono continuare la loro transazione
 }
@@ -390,7 +382,7 @@ static void slk_init_hook(void)
  ************************************************************************************************************/
 static void slk_init_data(void)
 {
-    //max_bwt;
+    max_bwt=100;
     last_udp_traffic = 0; //Valore del traffico UDP all'ultima lettura
     udp_traffic = 0;  //traffico UDP
     num_tcp_flows = 0;    //numero flussi TCP
@@ -442,7 +434,8 @@ static int __init mod_init(void)
 static void __exit mod_exit(void)
 {
     nf_unregister_hook(&nfho); //rilascia l'hook
-    printk(KERN_INFO "Totale pacchetti ricevuti:%d", tot_pkt_count );
+    printk(KERN_INFO "Totale pacchetti ricevuti: %d\n", tot_pkt_count );
+    printk(KERN_INFO "Totale traffico UDP(): %d byte\n", ntohs(udp_traffic));
     printk(KERN_INFO "Rimozione del modulo SKL: SAP-LAW KERNEL \n");
 }
 
