@@ -510,5 +510,5 @@ module_exit(mod_exit);
 //Definiscono delle informazioni riguardati in modulo
 MODULE_AUTHOR("Giacomo Pandini");
 MODULE_DESCRIPTION("SLK, Sap-Law Kernel");
-MODULE_LICENSE("Take away pizza");
+MODULE_LICENSE("GPL");
 

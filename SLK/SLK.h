@@ -10,24 +10,24 @@
 #include <linux/udp.h>
 #include <linux/tcp.h>
 #include <linux/ip.h>
-
 #include <linux/moduleparam.h> //Necessario per la lettura di parametri in ingresso al programma
-
 #include <linux/errno.h> //Definisce alcuni codici di errore
-
 #include <linux/time.h> //per la gestione dei timer
-
 #include <linux/spinlock.h> //per la definizione degli spinlock
-
 #include <linux/types.h> //Necessario per usare dei tipi di dato in formato kernel
-
 #include <linux/slab.h> //necessario per la kmalloc
 #include <linux/gfp.h> //flag della kmalloc , DA VERIFICARE
-
 #include <linux/string.h> //per la memcpy
+#include <net/sock.h> //netlink
+#include <linux/netlink.h> //netlink
 
-//Debug flag
+//Flag di Netlink
+#define NETLINK_TEST 17
+
+//Flag
 #define DEBUG 0
+#define LOG 0
+
 
 //Valori di tempo che aiutano a modificare il valore che definisce ogni quanti pacchetti eseguire il calcolo della SAP-LAW
 #define SLK_TRAFFIC_STAT_TIMER_UP 3000 //Upperbound
@@ -96,6 +96,10 @@ static TCPid_t* tcp_flow_list;
 
 //Struttura dati Netfilter per la definizione di un hook
 static struct nf_hook_ops nfho;
+
+// Socket Netlink
+static struct sock *nl_sk;
+static int pid; //Pid del processo che riceve i dati di log
 
 /*********************************************************************************************************
  SEMAFORI E MUTEX
