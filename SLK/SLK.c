@@ -332,6 +332,56 @@ static void slk_magic_formula(void)
 }
 
 /************************************************************************************************************
+ log_loginfo()
+ Crea ed invia il messaggio contenente i dati da salvare sul log attraverso il socket netlink
+ ************************************************************************************************************/
+static void log_loginfo(void)
+{
+    
+    struct nlmsghdr *nlh;
+    struct sk_buff *skb_out; //Buffer messaggio di uscita
+    int msg_size;
+    int res;
+    
+    /*spin_lock(&lock_udp_traffic);
+     spin_lock(&lock_last_udp_traffic);
+     spin_lock(&lock_num_tcp_flows);
+     spin_lock(&lock_udp_avg_bdw);
+     read_lock(&rwlock_new_adv_wnd);
+     spin_lock(&lock_last_check);
+     spin_lock(&lock_tot_pkt_count);
+     spin_lock(&lock_mod_pkt_count);
+     read_lock(&rwlock_traffic_stat_timer);*/
+    
+    msg_size = sizeof(SLK_DATA); //Grandezza del messaggio
+    skb_out = nlmsg_new(msg_size, 0); //Crea il messaggio
+    if (!skb_out)
+    {
+        printk(KERN_ALERT "Failed to allocate new skb\n");
+        return;
+    }
+    
+    nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, msg_size, 0);
+    NETLINK_CB(skb_out).dst_group = 0; //Messaggio unicast
+    memcpy(nlmsg_data(nlh), slk_info, msg_size);
+    
+    /*read_unlock(&rwlock_traffic_stat_timer);
+     spin_unlock(&lock_mod_pkt_count);
+     spin_unlock(&lock_tot_pkt_count);
+     spin_unlock(&lock_last_check);
+     read_unlock(&rwlock_new_adv_wnd);
+     spin_unlock(&lock_udp_avg_bdw);
+     spin_unlock(&lock_num_tcp_flows);
+     spin_unlock(&lock_last_udp_traffic);
+     spin_unlock(&lock_udp_traffic);*/
+    
+    
+    res = nlmsg_unicast(nl_sk, skb_out, pid); //Invia il messaggio nel socket
+    if (res < 0)
+        printk(KERN_ALERT "Error while sending to user \n");
+}
+
+/************************************************************************************************************
  hook_func()
  Funzione di hook da utilizzare nel Framework Netfilter. Viene richiamata ogni volta che un pacchetto arriva sull'hook specificato dal modulo. Gestisce l'analisi dei pacchetti in base al protocollo di trasporto. I pacchetti UDP li utilizza per il calcolo della banda passante UDP. I pacchet TCP modifca l'advertised window per ottenere un comportamento diverso del TCP nella rete. Esegue costanti aggiornamenti dei parametri che gestiscono i meccanismi precedentemente illustarti.
  ************************************************************************************************************/
@@ -349,7 +399,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
     
     res=slk_check_update_SL(); //aggiorna il contatore dei pacchetti e controlla se occorre aggiornare i parametri di gestione del traffico
 #ifdef DEBUG //DEBUG
-    printk(KERN_INFO "*****DEBUG***** tot_pkt_count: %d \n",slk_info->tot_pkt_count);
+    //printk(KERN_INFO "*****DEBUG***** tot_pkt_count: %d \n",slk_info->tot_pkt_count);
 #endif
     
     ip=ip_hdr(skb); //prende l'header IP dal buffer skb
@@ -401,6 +451,10 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 #ifdef DEBUG //DEBUG
         printk(KERN_INFO "*****DEBUG***** udp_avg_bdw: %d \t new_adv_wnd : %d \n",slk_info->udp_avg_bdw,slk_info->new_adv_wnd);
 #endif
+         if(pid!=-1) //Se è stato inizializzato il pid del processo di log invio messaggi di log
+         {
+             log_loginfo();
+         }
     }
     return NF_ACCEPT; //accetta tutti i pacchetti, possono continuare la loro transazione
 }
@@ -441,6 +495,10 @@ static void slk_init_data(void)
     slk_info->tot_pkt_count = 0; //contatore pacchetti
     slk_info->mod_pkt_count = 0;
     slk_info->traffic_stat_timer = 1; //Ogni quanti pacchetti eseguire la formula, modificato dinamicamente
+    
+    pid=-1;
+    
+    //Parametri in ingresso
     if(up_bwt>0)
         slk_info->max_bwt=up_bwt;
         
@@ -470,6 +528,22 @@ static void slk_init_spinlock(void)
 }
 
 /************************************************************************************************************
+ log_recv_msg()
+ Inizializza il pid del processo che esegue il log di alcune informazioni del modulo
+ ************************************************************************************************************/
+static void log_recv_msg(struct sk_buff *skb)
+{
+    struct nlmsghdr *nlh;
+    
+    nlh = (struct nlmsghdr *)skb->data; //Riceve il messaggio
+#ifdef DEBUG
+    printk(KERN_INFO "Messaggio di inizializzazione da user-space :%s\n", (char *)nlmsg_data(nlh));
+#endif
+    
+    pid = nlh->nlmsg_pid; // Pid del processo che ha inviato il messaggio, inizializzazione completata
+}
+
+/************************************************************************************************************
  mod_init()
  Inizializza il programma richiamando le varie funzioni di inizializzazione e registrando l'hook in ascolto
  ************************************************************************************************************/
@@ -480,6 +554,16 @@ static int __init mod_init(void)
     slk_init_hook();    //Definisce i valori della struttura dati che implementa l'hook
     slk_init_data();    //inizializzazione delle variabili del programma
     slk_init_spinlock();    //Inizializzazione semafori e spinlock
+    
+    struct netlink_kernel_cfg cfg = {
+        .input = log_recv_msg,
+    };
+    nl_sk = netlink_kernel_create(&init_net, NETLINK_TEST, &cfg);
+    if (!nl_sk)
+    {
+        printk(KERN_ALERT "Error creating socket.\n");
+        return -10;
+    }
     
     nf_register_hook(&nfho); //registra in ascolto l'hook
     printk(KERN_INFO "Inizializzazione SLK completata, modulo caricato correttamente \n");
@@ -493,6 +577,8 @@ static int __init mod_init(void)
 
 static void __exit mod_exit(void)
 {
+    netlink_kernel_release(nl_sk); //Rilascia il socket
+
     kfree(slk_info); //libera la memoria allocata per slk_info
     nf_unregister_hook(&nfho); //rilascia l'hook
     printk(KERN_INFO "Totale pacchetti ricevuti: %d\n", slk_info->tot_pkt_count );
