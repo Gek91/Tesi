@@ -375,7 +375,6 @@ static void log_loginfo(void)
      spin_unlock(&lock_last_udp_traffic);
      spin_unlock(&lock_udp_traffic);*/
     
-    
     res = nlmsg_unicast(nl_sk, skb_out, pid); //Invia il messaggio nel socket
     if (res < 0)
         printk(KERN_ALERT "Error while sending to user \n");
@@ -451,10 +450,12 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 #ifdef DEBUG //DEBUG
         printk(KERN_INFO "*****DEBUG***** udp_avg_bdw: %d \t new_adv_wnd : %d \n",slk_info->udp_avg_bdw,slk_info->new_adv_wnd);
 #endif
-         if(pid!=-1) //Se è stato inizializzato il pid del processo di log invio messaggi di log
-         {
-             log_loginfo();
-         }
+        read_lock(&rwlock_pid);
+        if(pid!=-1) //Se è stato inizializzato il pid del processo di log invio messaggi di log
+        {
+            log_loginfo();
+        }
+        read_unlock(&rwlock_pid);
     }
     return NF_ACCEPT; //accetta tutti i pacchetti, possono continuare la loro transazione
 }
@@ -496,6 +497,8 @@ static void slk_init_data(void)
     slk_info->mod_pkt_count = 0;
     slk_info->traffic_stat_timer = 1; //Ogni quanti pacchetti eseguire la formula, modificato dinamicamente
     
+    nl_sk=NULL;
+    
     pid=-1;
     
     //Parametri in ingresso
@@ -524,6 +527,7 @@ static void slk_init_spinlock(void)
     spin_lock_init(&lock_mod_pkt_count); //spinlock mod_pkt_count
     rwlock_init(&rwlock_traffic_stat_timer); //rw spinlock traffic_stat_timer
     spin_lock_init(&lock_tcp_flow_list); //spinlock tcp_flow_list
+    rwlock_init(&rwlock_pid); // rw spinlock pid
     printk(KERN_INFO "Inizializzazione semafori e spinlock completata \n");
 }
 
@@ -537,10 +541,14 @@ static void log_recv_msg(struct sk_buff *skb)
     
     nlh = (struct nlmsghdr *)skb->data; //Riceve il messaggio
 #ifdef DEBUG
-    printk(KERN_INFO "Messaggio di inizializzazione da user-space :%s\n", (char *)nlmsg_data(nlh));
+    printk(KERN_INFO "Messaggio da user-space :%s\n", (char *)nlmsg_data(nlh));
 #endif
-    
-    pid = nlh->nlmsg_pid; // Pid del processo che ha inviato il messaggio, inizializzazione completata
+    write_lock(&rwlock_pid);
+    if(pid==-1)
+        pid = nlh->nlmsg_pid; // Pid del processo che ha inviato il messaggio, inizializzazione completata
+    else
+        pid=-1; //terminazione salvataggio sul log
+    write_unlock(&rwlock_pid);
 }
 
 /************************************************************************************************************
@@ -554,11 +562,12 @@ static int __init mod_init(void)
     slk_init_hook();    //Definisce i valori della struttura dati che implementa l'hook
     slk_init_data();    //inizializzazione delle variabili del programma
     slk_init_spinlock();    //Inizializzazione semafori e spinlock
+
     
     struct netlink_kernel_cfg cfg = {
         .input = log_recv_msg,
     };
-    nl_sk = netlink_kernel_create(&init_net, NETLINK_TEST, &cfg);
+    nl_sk = netlink_kernel_create(&init_net, NETLINK_TEST, &cfg); //Crea il socket netlink
     if (!nl_sk)
     {
         printk(KERN_ALERT "Error creating socket.\n");
@@ -566,6 +575,7 @@ static int __init mod_init(void)
     }
     
     nf_register_hook(&nfho); //registra in ascolto l'hook
+    
     printk(KERN_INFO "Inizializzazione SLK completata, modulo caricato correttamente \n");
     printk(KERN_INFO "max_bwt= %d , const_adv_wnd= %d  \n",slk_info->max_bwt, slk_info->const_adv_wnd );
     return 0;
@@ -577,10 +587,11 @@ static int __init mod_init(void)
 
 static void __exit mod_exit(void)
 {
-    netlink_kernel_release(nl_sk); //Rilascia il socket
 
     kfree(slk_info); //libera la memoria allocata per slk_info
+    //LIBERARE LISTA FLUSSI TCP
     nf_unregister_hook(&nfho); //rilascia l'hook
+    netlink_kernel_release(nl_sk); //Rilascia il socket
     printk(KERN_INFO "Totale pacchetti ricevuti: %d\n", slk_info->tot_pkt_count );
     printk(KERN_INFO "Totale traffico UDP(): %d byte\n",slk_info->udp_traffic);
     printk(KERN_INFO "Totale pacchetti modificati : %d \n", slk_info->mod_pkt_count);

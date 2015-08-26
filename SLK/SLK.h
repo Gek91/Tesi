@@ -115,6 +115,8 @@ static int pid; //Pid del processo che riceve i dati di log
  rwlock_traffic_stat_timer : rw spinlock per l'accesso alla variabile last_check
  
  lock_tcp_flow_list : spinlock per l'accesso alla variabile tcp_flow_list
+ 
+ rw_lock_pid : spinlock per l'accesso alla variabile pid
  *********************************************************************************************************/
 static spinlock_t lock_udp_traffic;
 static spinlock_t lock_last_udp_traffic;
@@ -128,6 +130,8 @@ static spinlock_t lock_mod_pkt_count;
 static rwlock_t rwlock_traffic_stat_timer;
 
 static spinlock_t lock_tcp_flow_list;
+
+static rwlock_t rwlock_pid;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 static int up_bwt=-1;
