@@ -27,7 +27,7 @@ static int slk_check_update_SL(void)
  slk_udp_handle()
  Gestisce le operazioni da eseguire nel caso il pacchetto contenga un segmento UDP. Aggiorna il contatore del traffico UDP.
  - ip: puntatore alla struttura che contiene l'header ip
- - tcp: puntatore alla struttura che contiene l'header tcp
+ - udp: puntatore alla struttura che contiene l'header udp
  ************************************************************************************************************/
 static void slk_udp_handle(struct iphdr *ip, struct udphdr *udp)
 {
@@ -100,65 +100,34 @@ static void searchTCPflow(u_int32_t ipsource, u_int32_t ipdest, u_int16_t tcpsou
 }
 
 /************************************************************************************************************
- slk_calc_chksum_buf()
- Calcola il checksum sul buffer passato in ingresso. Ritorna il valore calcolato
- - packet:Puntatore al buffer cotenente lo pseudoheader TCP e tutto il segmento TCP del messaggio
- - packlen:Lunghezza in byte del buffer contenente i dati su cui eseguire il checksum
- ************************************************************************************************************/
-static u_int16_t slk_calc_chksum_buf(u_int16_t *packet, int packlen) {
-    unsigned long sum = 0;
-    
-    while (packlen > 1) {
-        sum += *(packet++);
-        packlen -= 2;
-    }
-    
-    if (packlen > 0) {
-        sum += *(unsigned char *)packet;
-    }
-    
-    while (sum >> 16) {
-        sum = (sum & 0xffff) + (sum >> 16);
-    }
-    
-    return (u_int16_t) ~sum;
-}
-
-/************************************************************************************************************
  slk_calc_check()
  Esegue il calcolo del checksum per il pacchetto tcp passato in ingresso. Crea il buffer che conterrà lo pseudo header necessario per il caloclo del checksum oltre al pacchetto TCP. Richiama slk_calc_checksum_buf per l'esecuzione del calcolo del checksum.
  - ip: puntatore alla struttura che contiene l'header ip
  - tcp: puntatore alla struttura che contiene l'header tcp
+ - slk: puntatore alla struttura che contiene l'intero buffer contenente il messaggio
  ************************************************************************************************************/
-static void slk_calc_check(struct iphdr *ip, struct tcphdr *tcp)
+static void slk_calc_check(struct iphdr *ip, struct tcphdr *tcp,struct sk_buff *skb)
 {
     //RESET CHECKSUM
-    u_int16_t tcp_tot_len = ntohs( (u_int16_t) ip->tot_len) - 20; //calcola lunghezza segmento TCP
-    u8 *buf=kmalloc(12 + tcp_tot_len,GFP_KERNEL); //buffer contenente lo pseudo header TCP(12 byte)
-    
-    //Inizializzazione dello pseudo header
-    (void *)memcpy(buf, &(ip->saddr), sizeof(u_int32_t));	// Indirizzo di provenienza IP dello pseudo header
-    (void *)memcpy(&(buf[4]), &(ip->daddr), sizeof(u_int32_t));	// Indirizzo di destinazione IP dello pseud header
-    buf[8] = 0;							// Reserved location dello pseudo header
-    buf[9] = ip->protocol;			// Protocollo di trasporto dello pseudo header
-    buf[10]=(u_int16_t)((tcp_tot_len) & 0xFF00) >> 8;	// Lunghezza totale header TCP salvata sullo pseudo header, traslo per simulare il big endian
-    buf[11]=(u_int16_t)((tcp_tot_len) & 0x00FF);
-    
-    tcp->check = 0; //imposto il valore del check a 0 per il suo ricalcolo
-    (void *)memcpy(buf + 12, tcp, tcp_tot_len ); //copio il pacchetto tcp nel buffer
-    tcp->check = htons( slk_calc_chksum_buf((u_int16_t *)buf, 12 + tcp_tot_len) ); //Ricalcolo del checksum
-    kfree(buf); //libera la memoria allocata
+    u_int16_t tcplen = (skb->len - (ip->ihl << 2)); //Calcola la lunghezza del segmento TCP
+    tcp->check = 0; //imposta a 0 il valore del checksum per il suo ricalcolo
+    tcp->check = tcp_v4_check(tcplen,ip->saddr,ip->daddr, csum_partial((char *)tcp, tcplen, 0)); //Esegue il ricalcolo
+    skb->ip_summed = CHECKSUM_NONE; //stop offloading
+    ip->check = 0;
+    ip->check = ip_fast_csum((u8 *)ip, ip->ihl); //Esegue il ricalcolo del checksum IP
 }
 
 /************************************************************************************************************
  slk_tcp_handle()
  Gestisce le operazioni da eseguire nel caso il pacchetto contenga un segmento TCP. Modifica il valore della advertised windows in relazione ai parametri impostati dalla SAP-LAW. Aggiorna poi il checksum del pacchetto.
  - ip: puntatore alla struttura che contiene l'header ip
- - tcp: puntatore alla struttura che contiene l'header tcp
+ - skb: puntatore alla struttura che contiene l'intero buffer contenente il messaggio
  ************************************************************************************************************/
-static void slk_tcp_handle(struct iphdr *ip, struct tcphdr *tcp)
+static void slk_tcp_handle(struct iphdr *ip, struct sk_buff *skb)
 {
+    struct tcphdr *tcp = NULL;
     int mod=0; //utile a definire se il pacchetto viene modificato
+    tcp=tcp_hdr(skb); //prende l'header TCP dal buffer skb
     if (slk_info->const_adv_wnd < 0)// se non è impostato un valore fisso di advertised window
     {
         searchTCPflow(ntohs(ip->saddr),ntohs(ip->daddr),ntohs(tcp->source),ntohs(tcp->dest)); //controlla la presenza del flusso relativo al pacchetto, se non esiste lo inserisce
@@ -179,7 +148,7 @@ static void slk_tcp_handle(struct iphdr *ip, struct tcphdr *tcp)
     
     if (mod)// se il pacchetto viene modificato
     {
-        slk_calc_check(ip,tcp); //calcola il nuovo valore del checksum del pacchetto modificato
+        slk_calc_check(ip,tcp,skb); //calcola il nuovo valore del checksum del pacchetto modificato
         
         spin_lock(&lock_mod_pkt_count);
         slk_info->mod_pkt_count++; //aumenta il contatore dei pacchetti modificati
@@ -390,7 +359,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
     //Strutture dati per la manipolazione dei pacchetti
     struct iphdr *ip  = NULL;
     struct udphdr *udp = NULL;
-    struct tcphdr *tcp = NULL;
+    
     int res; //variabile ausiliaria
     
     if (!skb)  //se non c'è nessun socket buffer
@@ -418,8 +387,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
             break;
             
         case 6: //TCP
-            tcp=tcp_hdr(skb); //prende l'header TCP dal buffer skb
-            slk_tcp_handle(ip,tcp);
+            slk_tcp_handle(ip,skb);
 #ifdef DEBUG //DEBUG
            // printk(KERN_INFO "*****DEBUG***** Pacchetto TCP \t source:%d \t destination:%d \n",ntohs(tcp->source),ntohs(tcp->dest));
             //printk(KERN_INFO "*****DEBUG***** mod_pkt_count: %d \n",slk_info->mod_pkt_count);
@@ -557,16 +525,17 @@ static void log_recv_msg(struct sk_buff *skb)
  ************************************************************************************************************/
 static int __init mod_init(void)
 {
+    //Necessaria per la crazione del socket
+    struct netlink_kernel_cfg cfg = {
+        .input = log_recv_msg,
+    };
+    
     printk(KERN_INFO "Inizializzazione modulo SLK: SAP-LAW KERNEL \n");
 
     slk_init_hook();    //Definisce i valori della struttura dati che implementa l'hook
     slk_init_data();    //inizializzazione delle variabili del programma
     slk_init_spinlock();    //Inizializzazione semafori e spinlock
 
-    
-    struct netlink_kernel_cfg cfg = {
-        .input = log_recv_msg,
-    };
     nl_sk = netlink_kernel_create(&init_net, NETLINK_TEST, &cfg); //Crea il socket netlink
     if (!nl_sk)
     {

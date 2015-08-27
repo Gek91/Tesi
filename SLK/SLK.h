@@ -21,6 +21,9 @@
 #include <net/sock.h> //netlink
 #include <linux/netlink.h> //netlink
 
+#include <net/ip.h>
+#include <net/tcp.h>
+
 //Flag di Netlink
 #define NETLINK_TEST 17
 
