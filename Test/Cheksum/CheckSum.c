@@ -8,29 +8,13 @@
 #include <linux/tcp.h>
 #include <linux/ip.h>
 
+#include <net/ip.h>
+#include <net/tcp.h>
+
 #include <linux/slab.h> //necessario per la kmalloc
 #include <linux/gfp.h> //flag della kmalloc , DA VERIFICARE
 
 static struct nf_hook_ops nfho;
-
-static u_int16_t slk_calc_chksum_buf(u_int16_t *packet, int packlen) {
-    unsigned long sum = 0;
-    
-    while (packlen > 1) {
-        sum += *(packet++);
-        packlen -= 2;
-    }
-    
-    if (packlen > 0) {
-        sum += *(unsigned char *)packet;
-    }
-    
-    while (sum >> 16) {
-        sum = (sum & 0xffff) + (sum >> 16);
-    }
-    
-    return (u_int16_t) ~sum;
-}
 
 unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in, const struct net_device *out, int (*okfn)(struct sk_buff *))
 {
@@ -39,34 +23,29 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
     
     if (!skb)  //se non c'è nessun socket buffer
         return NF_DROP;
-
-    ip=ip_hdr(skb);
     
-    //printk(KERN_INFO "normal : %d | ntohs : %d",ip->protocol,ntohs(ip->protocol));
-    //printk(KERN_INFO "normal : %d | ntohs : %d\n",ip->tot_len,ntohs(ip->tot_len));
+    ip=ip_hdr(skb);
 
     if (ip->protocol==6)
     {
         tcp=tcp_hdr(skb);
         
-        printk(KERN_INFO "PRIMA -- normal : %d | ntohs : %d\n",tcp->check,ntohs(tcp->check));
-
-        u_int16_t tcp_tot_len = ntohs( (u_int16_t) ip->tot_len) - 20; //calcola lunghezza segmento TCP
-        u8 *buf=kmalloc(12 + tcp_tot_len,GFP_KERNEL); //buffer contenente lo pseudo header TCP(12 byte)
+        //printk(KERN_INFO "source %d, dest %d, seq %d, ack_seq %d, resl %d, doff %d, bit %d %d %d %d %d %d ,window %d, check %d, urg_ptr %d, ipsource %d, ipdest %d, iptotleng %d\n",tcp->source,tcp->dest,tcp->seq,tcp->ack_seq,tcp->doff, tcp->fin, tcp->syn, tcp->rst, tcp->psh , tcp->ack, tcp->urg, tcp->ece,tcp->window,tcp->check,tcp->urg_ptr, ip->saddr,ip->daddr, ip->tot_len);
+        printk(KERN_INFO "PRIMA -- normal : %d | ntohs : %d | htons : %d\n",tcp->check,ntohs(tcp->check),htons(tcp->check));
         
-        //Inizializzazione dello pseudo header
-        (void *)memcpy(buf, &(ip->saddr), sizeof(u_int32_t));	// Indirizzo di provenienza IP dello pseudo header
-        (void *)memcpy(&(buf[4]), &(ip->daddr), sizeof(u_int32_t));	// Indirizzo di destinazione IP dello pseud header
-        buf[8] = 0;							// Reserved location dello pseudo header
-        buf[9] = ip->protocol;			// Protocollo di trasporto dello pseudo header
-        buf[10]=(u_int16_t)((tcp_tot_len) & 0xFF00) >> 8;	// Lunghezza totale header TCP salvata sullo pseudo header
-        buf[11]=(u_int16_t)((tcp_tot_len) & 0x00FF);
+        /*u_int16_t tcplen = skb->len - ip_hdrlen(skb);
+        tcp->check = 0;
+        tcp->check = tcp_v4_check(tcplen,ip->saddr,ip->daddr,csum_partial((char *)tcp, tcplen, 0));*/
         
-        tcp->check = 0; //imposto il valore del check a 0 per il suo ricalcolo
-        (void *)memcpy(buf + 12, tcp, tcp_tot_len ); //copio il pacchetto tcp nel buffer
-        tcp->check = slk_calc_chksum_buf((u_int16_t *)buf, 12 + tcp_tot_len) ; //Ricalcolo del checksum
-        kfree(buf); //libera la memoria allocata
-        printk(KERN_INFO "DOPO -- normal : %d | ntohs : %d\n",tcp->check,ntohs(tcp->check));
+        u_int16_t tcplen = (skb->len - (ip->ihl << 2));
+        tcp->check = 0;
+        tcp->check = tcp_v4_check(tcplen,ip->saddr,ip->daddr, csum_partial((char *)tcp, tcplen, 0));
+        skb->ip_summed = CHECKSUM_NONE; //stop offloading
+        ip->check = 0;
+        ip->check = ip_fast_csum((u8 *)ip, ip->ihl);
+        
+         //printk(KERN_INFO "source %d, dest %d, seq %d, ack_seq %d, resl %d, doff %d, bit %d %d %d %d %d %d ,window %d, check %d, urg_ptr %d, ipsource %d, ipdest %d, iptotleng %d\n",tcp->source,tcp->dest,tcp->seq,tcp->ack_seq,tcp->doff, tcp->fin, tcp->syn, tcp->rst, tcp->psh , tcp->ack, tcp->urg, tcp->ece,tcp->window,tcp->check,tcp->urg_ptr, ip->saddr,ip->daddr, ip->tot_len);
+        printk(KERN_INFO "DOPO -- normal : %d | ntohs : %d | htons : %d\n",tcp->check,ntohs(tcp->check),htons(tcp->check));
     }
     
     return NF_ACCEPT; //accetta tutti i pacchetti, possono continuare la loro transazione
