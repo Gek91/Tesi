@@ -1,7 +1,7 @@
 
 #include "SLK.h"
 
-//TO DO:gestione errori(anche negli spinlock), controllare header ethernet
+//TO DO:gestione errori(anche negli spinlock), controllare header ethernet, GESTIONE FLUSSI TCP Più INTELLIGENTE
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -553,7 +553,7 @@ static void log_recv_msg(struct sk_buff *skb)
 
 /************************************************************************************************************
  mod_init()
- Inizializza il programma richiamando le varie funzioni di inizializzazione e registrando l'hook in ascolto
+ Inizializza il programma richiamando le varie funzioni di inizializzazione e registrando l'hook in ascolto e il socket di comunicazione con il processo di log nell'user space
  ************************************************************************************************************/
 static int __init mod_init(void)
 {
@@ -585,11 +585,28 @@ static int __init mod_init(void)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////Funzione di terminazione del modulo, ///////////////////////////////////////////
 
+/************************************************************************************************************
+ free_TCP_flow_list()
+ Libera la lista utilizzata per salvare l'informazione relativa ai flussi TCP attivi, la funzione è ricorsiva, ogni volta libera la memoria relativa all'elemento passato in ingresso. La chiamata ricorsiva continua fino a trovare l'ultimo elemento, da quello le chiamate ritornano indietro liberando tutta la lista
+ - list_elem: elemento passato in ingresso che sarà liberato in questa chiamata
+ ************************************************************************************************************/
+TCPid_t* free_TCP_flow_list(TCPid_t* list_elem)
+{
+    if(list_elem==NULL)
+        return NULL;
+    list_elem->next=free_TCP_flow_list(list_elem->next);
+    kfree(list_elem);
+    return NULL;
+}
+
+/************************************************************************************************************
+ mod_exit()
+ Libera le strutture dati utilizzate dal modulo e rilascia hook e socket. Termina quindi l'esecuzione del modulo
+ ************************************************************************************************************/
 static void __exit mod_exit(void)
 {
-
+    free_TCP_flow_list(tcp_flow_list); //Libera la memoria utilizzata per la gestione della lista dei flussi TCP attivi
     kfree(slk_info); //libera la memoria allocata per slk_info
-    //LIBERARE LISTA FLUSSI TCP
     nf_unregister_hook(&nfho); //rilascia l'hook
     netlink_kernel_release(nl_sk); //Rilascia il socket
     printk(KERN_INFO "Totale pacchetti ricevuti: %d\n", slk_info->tot_pkt_count );

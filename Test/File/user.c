@@ -3,28 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <sys/time.h>
 
 #define NETLINK_TEST 17
 #define MAX_PAYLOAD 1024  /* maximum payload size*/
-
-//Struttura del messaggio ricevuto
-typedef struct
-{
-    int max_bwt;
-    int last_udp_traffic;
-    int udp_traffic;
-    int num_tcp_flows;
-    int udp_avg_bdw;
-    int new_adv_wnd;
-    int const_adv_wnd;
-    struct timeval last_check;
-    
-    int tot_pkt_count;
-    int mod_pkt_count;
-    int traffic_stat_timer;
-    
-} SLK_DATA;
 
 struct sockaddr_nl src_addr, dest_addr; //indirizzo di provenienza e di destinazione da utilizzare nel socket
 struct nlmsghdr *nlh = NULL;            //struttura contenente l'header del messaggio
@@ -59,8 +40,7 @@ void main()
     nlh->nlmsg_pid = getpid();                  //Pid del processo
     nlh->nlmsg_flags = 0;
     //Payload del messaggio
-    printf("Inviato messaggio di sincronizzazione del socket");
-    strcpy(NLMSG_DATA(nlh), "INIT PID");
+    strcpy(NLMSG_DATA(nlh), "Hello you!");
     
     iov.iov_base = (void *)nlh;
     iov.iov_len = nlh->nlmsg_len;
@@ -75,13 +55,10 @@ void main()
     
     
     /* Read message from kernel */
-    while(1)
-    {
-        memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
-        recvmsg(sock_fd, &msg, 0);
-        SLK_DATA *m = (SLK_DATA *) NLMSG_DATA(nlh);
-        printf(" Received message payload: \t udp_traffic:%d \t num_tcp_flows:%d \t udp_avg_bdw:%d \t new_adv_wnd:%d \t tot_pkt_count:%d \t traffic_stat_timer:%d \t lastcheck:%ld.%06ld sec\n",m->udp_traffic,m->num_tcp_flows,m->udp_avg_bdw,m->new_adv_wnd,m->tot_pkt_count,m->traffic_stat_timer,m->last_check.tv_sec,m->last_check.tv_usec);
-    }
+    memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
+    recvmsg(sock_fd, &msg, 0);
+    printf(" Received message payload: %s\n", NLMSG_DATA(nlh));
+    
     /* Close Netlink Socket */
     close(sock_fd);
 }
