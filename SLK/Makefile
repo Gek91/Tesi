@@ -2,8 +2,18 @@ obj-m := SLK.o
 KDIR := /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 
-all:	
+all: user kernel
+
+kernel:	
 	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) modules
 
-clean:
+user:
+	gcc -o user -pthread user.c
+
+clean: cleanu cleank
+
+cleank:
 	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) clean
+
+cleanu:
+	rm users log

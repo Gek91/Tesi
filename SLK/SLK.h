@@ -28,8 +28,8 @@
 #define NETLINK_TEST 17
 
 //Flag
-#define DEBUG 0
-#define LOG 0
+#define DEBUG 1
+#define LOG 1
 
 
 //Valori di tempo che aiutano a modificare il valore che definisce ogni quanti pacchetti eseguire il calcolo della SAP-LAW

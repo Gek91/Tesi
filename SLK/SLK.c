@@ -1,7 +1,12 @@
 
 #include "SLK.h"
 
-//TO DO:gestione errori(anche negli spinlock), controllare header ethernet, GESTIONE FLUSSI TCP Più INTELLIGENTE
+//TO DO: GESTIONE FLUSSI TCP Più INTELLIGENTE Test da fare
+//Conteggio pacchetti
+//conteggio totale traffico udp
+//conteggio flussi TCP
+//controllo banda udp corrente
+//controllo magic formula
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -46,7 +51,7 @@ static void slk_udp_handle(struct iphdr *ip, struct udphdr *udp)
  *************************************************************************************************************/
 static void searchTCPflow(u_int32_t ipsource, u_int32_t ipdest, u_int16_t tcpsource, u_int16_t tcpdest)
 {
-    int iterate=1;
+    int iterate=1; //Variabile utilizzata per continuare o fermare il ciclo while
     TCPid_t* it;
     TCPid_t* nxt;
     spin_lock(&lock_tcp_flow_list); //riserva la risorsa tcp_flow_list
@@ -101,7 +106,7 @@ static void searchTCPflow(u_int32_t ipsource, u_int32_t ipdest, u_int16_t tcpsou
 
 /************************************************************************************************************
  slk_calc_check()
- Esegue il calcolo del checksum per il pacchetto tcp passato in ingresso. Crea il buffer che conterrà lo pseudo header necessario per il caloclo del checksum oltre al pacchetto TCP. Richiama slk_calc_checksum_buf per l'esecuzione del calcolo del checksum.
+ Esegue il calcolo del checksum per il pacchetto tcp passato in ingresso. Ricalcola anche il checksum IP per il messaggio
  - ip: puntatore alla struttura che contiene l'header ip
  - tcp: puntatore alla struttura che contiene l'header tcp
  - slk: puntatore alla struttura che contiene l'intero buffer contenente il messaggio
@@ -110,10 +115,10 @@ static void slk_calc_check(struct iphdr *ip, struct tcphdr *tcp,struct sk_buff *
 {
     //RESET CHECKSUM
     u_int16_t tcplen = (skb->len - (ip->ihl << 2)); //Calcola la lunghezza del segmento TCP
-    tcp->check = 0; //imposta a 0 il valore del checksum per il suo ricalcolo
-    tcp->check = tcp_v4_check(tcplen,ip->saddr,ip->daddr, csum_partial((char *)tcp, tcplen, 0)); //Esegue il ricalcolo
+    tcp->check = 0; //Imposta a 0 il valore del checksum per il suo ricalcolo
+    tcp->check = tcp_v4_check(tcplen,ip->saddr,ip->daddr, csum_partial((char *)tcp, tcplen, 0)); //Esegue il ricalcolo del checksum TCP
     skb->ip_summed = CHECKSUM_NONE; //stop offloading
-    ip->check = 0;
+    ip->check = 0; //Imposta a 0 il valore del checksum ip per il suo calcolo
     ip->check = ip_fast_csum((u8 *)ip, ip->ihl); //Esegue il ricalcolo del checksum IP
 }
 
@@ -133,14 +138,14 @@ static void slk_tcp_handle(struct iphdr *ip, struct sk_buff *skb)
         searchTCPflow(ntohs(ip->saddr),ntohs(ip->daddr),ntohs(tcp->source),ntohs(tcp->dest)); //controlla la presenza del flusso relativo al pacchetto, se non esiste lo inserisce
         
         read_lock(&rwlock_new_adv_wnd); //Riserva in lettura la risorsa new_adv_wnd
-        if( ntohs (tcp->window) > (u_int16_t)slk_info->new_adv_wnd ) //imposta il valore minore tra quello attuale e quello calcolato
+        if( ntohs (tcp->window) > (u_int16_t)slk_info->new_adv_wnd ) //imposta il valore minore tra quello attuale e quello calcolato con SAP-LAW
         {
             tcp->window = htons ((u_int16_t) slk_info->new_adv_wnd);
             mod++;
         }
         read_unlock(&rwlock_new_adv_wnd); // Rilascia la risorsa new_adv_wnd
     }
-    else
+    else //Se il valore fisso è impostato
     {
         tcp->window =htons ( (u_int16_t) slk_info->const_adv_wnd); //imposta il valore fisso definito dall'utente
         mod++;
@@ -215,7 +220,7 @@ static void time_check_tcp_flows(struct timeval t)
     {
         //Calcolo differenza temporale tra il valore attuale e il valore di timer dell'elemento analizzato
         dts = ((t.tv_sec - it->timer.tv_sec) * 1000 ); //converto in millisecondi
-        dtm = ((t.tv_usec - it->timer.tv_usec) / 1000); // /1000 poiché salvato in microsecondi e voglio millisecondi
+        dtm = ((t.tv_usec - it->timer.tv_usec) / 1000); //1000 poiché salvato in microsecondi e voglio millisecondi
         dt = dts + dtm; //dt è in millisecondi
         if(dt>SLK_TCP_KEEPALIVE_TIMER) //se il timer ha passato il valore di keepalive
         {
@@ -398,7 +403,6 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
             break;
     }
     
-    //CONTROLLARRE SE NON SERVE IL CONTROLLO tot_pkt_count == 1 PRESENTE NELL'ALTRO PROGRAMMA
     if( (res == 0 || slk_info->tot_pkt_count == 1) && slk_info->const_adv_wnd < 0) //Occorre eseguire la SAP-LAW per aggiornare i parametri di esecuzione
     {
         struct timeval t;
@@ -406,7 +410,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
         do_gettimeofday(&t); //prende l'ora attuale
         dt=slk_calc_df(t); //calcola la differenza temporale tra l'ultimo check e l'ora attuale aggiornando l'ultimo check
         slk_update_tst(dt); //aggiorna il valore di traffic_stat_timer in relazione a dt
-        time_check_tcp_flows(t);
+        time_check_tcp_flows(t); //Controlla ed elimina eventuali flussi TCP scaduti o oltre soglia temporale
 #ifdef DEBUG //DEBUG
         printk(KERN_INFO "*****DEBUG***** traffic_stat_timer: %d pkt \t dt : %ld ms \t num_tcp_flows: %d \n",slk_info->traffic_stat_timer,dt,slk_info->num_tcp_flows);
 #endif
@@ -496,7 +500,7 @@ static void slk_init_spinlock(void)
     rwlock_init(&rwlock_traffic_stat_timer); //rw spinlock traffic_stat_timer
     spin_lock_init(&lock_tcp_flow_list); //spinlock tcp_flow_list
     rwlock_init(&rwlock_pid); // rw spinlock pid
-    printk(KERN_INFO "Inizializzazione semafori e spinlock completata \n");
+    printk(KERN_INFO "Inizializzazione spinlock completata \n");
 }
 
 /************************************************************************************************************
@@ -525,7 +529,7 @@ static void log_recv_msg(struct sk_buff *skb)
  ************************************************************************************************************/
 static int __init mod_init(void)
 {
-    //Necessaria per la crazione del socket
+    //Struttura necessaria per la creazione del socket
     struct netlink_kernel_cfg cfg = {
         .input = log_recv_msg,
     };
