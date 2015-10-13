@@ -265,7 +265,7 @@ static void slk_udp_bdw_update(long dt)
     //Calcolo della bandwidth UDP
     if (dt > 0)
     {
-        actual_udp_bdw = (unsigned long)(slk_info->udp_traffic - slk_info->last_udp_traffic)  / dt; //Byte/ms->Kbyte/s
+        actual_udp_bdw = (unsigned long)((slk_info->udp_traffic - slk_info->last_udp_traffic) * 1000UL) / dt; //Byte/s
     }
     // Modifica della banda UDP in base a necessità dinamiche
     if (slk_info->last_udp_traffic <= 0) //se è la prima volta che è modificato o se c'è stato poco traffico
@@ -443,7 +443,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 static void slk_init_hook(void)
 {
     nfho.hook = hook_func; //definisce la funzione da richiamare nell'hook
-    nfho.hooknum =NF_INET_PRE_ROUTING ; //Indica in che punto del protocollo è in ascolto l'hook
+    nfho.hooknum =NF_INET_POST_ROUTING ; //Indica in che punto del protocollo è in ascolto l'hook
     nfho.pf = PF_INET; //definisce la famiglia di protocolli da usare
     nfho.priority = NF_IP_PRI_FIRST; //indica la priorità dell'hook
     printk(KERN_INFO "Inizializzzione Kernel hook completata \n");
@@ -457,7 +457,7 @@ static void slk_init_data(void)
 {
     slk_info=kmalloc(sizeof(TCPid_t),GFP_KERNEL); //alloca la memoria per slk_info
     
-    slk_info->max_bwt=1000;
+    slk_info->max_bwt=1000*1024; //byte/s
     slk_info->last_udp_traffic = 0; //Valore del traffico UDP all'ultima lettura
     slk_info->udp_traffic = 0;  //traffico UDP
     slk_info->num_tcp_flows = 0;    //numero flussi TCP
@@ -475,7 +475,7 @@ static void slk_init_data(void)
     
     //Parametri in ingresso
     if(up_bwt>0)
-        slk_info->max_bwt=up_bwt;
+        slk_info->max_bwt=up_bwt *1024;
         
     if(adv_wnd>0)
         slk_info->const_adv_wnd=adv_wnd;

@@ -28,8 +28,8 @@
 #define NETLINK_TEST 17
 
 //Flag
-#define DEBUG 1
-#define LOG 1
+//#define DEBUG 1
+//#define LOG 1
 
 
 //Valori di tempo che aiutano a modificare il valore che definisce ogni quanti pacchetti eseguire il calcolo della SAP-LAW
@@ -46,7 +46,7 @@
  last_udp_traffic : Valore del traffico UPD in Byte l'ultima volta che è stato verificato
  udp_traffic : Valore del traffico UDP totale in Byte
  num_tcp_flows : numero di flussi TCP attualmente passanti
- udp_avg_bdw : bandwidth media in KB/s utilizzata per il calcolo della formula
+ udp_avg_bdw : bandwidth media in byte/s utilizzata per il calcolo della formula
  new_adv_wnd : valore dell'advertised window di TCP calcolata con SAP-LAW
  const_adv_wnd : variabile che contiene un eventuale valore fisso della adverstised windows impostato dall'utente
  last_check : indica quando è stata calcolata per l'ultima volta la bandwidth UPD
