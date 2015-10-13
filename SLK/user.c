@@ -9,6 +9,7 @@
 
 #define NETLINK_TEST 17
 #define MAX_PAYLOAD 1024  /* maximum payload size*/
+#define SLK_STAT_FILE_NAME "log"
 
 //Struttura del messaggio ricevuto
 typedef struct
@@ -38,7 +39,8 @@ struct msghdr msg;                      //Messaggio
 FILE *logfile;                          //File di log
 int loop;                               //Variabile di loop
 pthread_t thread;                       //Thread
-pthread_mutex_t lock;                   //Mutex
+
+/////////////////////////////////////////////////////////////////////////////////////////////
 
 //Thread che gestisce la ricezione dei messaggi dal kernel e effettua la scrittura su file delle informazioni ricevute
 void *thread_func(void *arg)
@@ -50,18 +52,23 @@ void *thread_func(void *arg)
         recvmsg(sock_fd, &msg, 0);
         SLK_DATA *m = (SLK_DATA *) NLMSG_DATA(nlh);
         
+        logfile=fopen(SLK_STAT_FILE_NAME,"a"); //Apertura file di log
+        if(logfile==NULL)
+        {
+            printf("Error opening file\n");
+            return -1;
+        }
         //printf("%d \t %d \t %d \t %d \t %d \t %d \n",m->udp_traffic,m->num_tcp_flows,m->udp_avg_bdw,m->new_adv_wnd,m->tot_pkt_count,m->traffic_stat_timer);
         fprintf(logfile,"%d \t\t\t %d \t\t\t %d \t\t\t %d \t\t\t %d \t\t\t %d \n",m->udp_traffic,m->num_tcp_flows,m->udp_avg_bdw,m->new_adv_wnd,m->tot_pkt_count,m->traffic_stat_timer);
-        pthread_mutex_lock(&lock);
-        if(loop!=1)
+        fclose(logfile); //Chiude il file
+        if(loop!=1) //Condizione di terminazione 
         {
-            pthread_mutex_unlock(&lock);
             break;
         }
-        pthread_mutex_unlock(&lock);
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////
 
 //MAIN
 int main()
@@ -118,28 +125,23 @@ int main()
     printf("Inviato messaggio di sincronizzazione del socket\n");
 
     
-    //Apertura file di log
-    logfile=fopen("log","w");
+    
+
+    //Stampa dell'ora corrente sul file
+    time(&t);
+    now = localtime( &t );
+    strftime(buffer, 26, "%Y:%m:%d %H:%M:%S", now);
+    logfile=fopen(SLK_STAT_FILE_NAME,"a"); //Apertura file di log
     if(logfile==NULL)
     {
         printf("Error opening file\n");
         return -1;
     }
-    //Stampa dell'ora corrente sul file
-    time(&t);
-    now = localtime( &t );
-    strftime(buffer, 26, "%Y:%m:%d %H:%M:%S", now);
     fprintf(logfile,"****** Start connection at ");
     fputs(buffer,logfile);
     fprintf(logfile," ******\n");
     fprintf(logfile,"udp_traffic \t\t num_tcp_flows \t\t udp_avg_bdw \t\t new_adv_wnd \t\t tot_pkt_count \t\t traffic_stat_timer \n");
-    
-    //Inizializzazione mutex
-    if (pthread_mutex_init(&lock, NULL) != 0)
-    {
-        printf("\n mutex init failed\n");
-        return -1;
-    }
+    fclose(logfile); //Chiude il file
     
     loop=1;
 
@@ -154,10 +156,8 @@ int main()
     //Gestisce la terminazione del salvataggio su log
     printf("Premi invio per terminare loggin\n");
     getchar();
-    pthread_mutex_lock(&lock);
     printf("Interruzione ciclo\n");
     loop=0;
-    pthread_mutex_unlock(&lock);
     pthread_join(thread,NULL);
     
     //Una volta terminato invia modulo kernel un messaggio per indicare che non effettua più il log dei messaggi
@@ -168,18 +168,22 @@ int main()
     msg.msg_iovlen = 1;
     sendmsg(sock_fd, &msg, 0);
     printf("Inviato messaggio di chiusura del socket\n");
+    
     //Stampa dell'ora corrente sul file
     time(&t);
     now = localtime( &t );
     strftime(buffer, 26, "%Y:%m:%d %H:%M:%S", now);
+    logfile=fopen(SLK_STAT_FILE_NAME,"a");
+    if(logfile==NULL) //Apertura file di log
+    {
+        printf("Error opening file\n");
+        return -1;
+    }
     fprintf(logfile,"****** Stop connection at ");
     fputs(buffer,logfile);
     fprintf(logfile," ******\n");
-    
-    //Elimina il mutex
-    pthread_mutex_destroy(&lock);
-    //Chiude il file
-    fclose(logfile);
+    fclose(logfile); //Chiude il file
+
     //Chiude il socket
     close(sock_fd);
     printf("Chiusura del programma user-space correttamente avvenuta\n");
