@@ -1,12 +1,7 @@
 
 #include "SLK.h"
 
-//TO DO: GESTIONE FLUSSI TCP Più INTELLIGENTE Test da fare
-//Conteggio pacchetti
-//conteggio totale traffico udp
-//conteggio flussi TCP
-//controllo banda udp corrente
-//controllo magic formula
+//TO DO: GESTIONE FLUSSI TCP Più INTELLIGENTE
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -372,12 +367,12 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
     
     res=slk_check_update_SL(); //aggiorna il contatore dei pacchetti e controlla se occorre aggiornare i parametri di gestione del traffico
 #ifdef DEBUG //DEBUG
-    //printk(KERN_INFO "*****DEBUG***** tot_pkt_count: %d \n",slk_info->tot_pkt_count);
+    printk(KERN_INFO "*****DEBUG***** tot_pkt_count: %d \n",slk_info->tot_pkt_count);
 #endif
     
     ip=ip_hdr(skb); //prende l'header IP dal buffer skb
 #ifdef DEBUG //DEBUG
-    //printk(KERN_INFO "*****DEBUG***** Header IP \t source: %pI4 \t destination: %pI4\t lenght:%u byte \n",&(ip->saddr),&(ip->daddr),ntohs(ip->tot_len)); //%pI4 permette la stampa dell'indirizzo in formato leggibile, occorre passargli il reference alla variabile
+    printk(KERN_INFO "*****DEBUG***** Header IP \t source: %pI4 \t destination: %pI4\t lenght:%u byte \n",&(ip->saddr),&(ip->daddr),ntohs(ip->tot_len)); //%pI4 permette la stampa dell'indirizzo in formato leggibile, occorre passargli il reference alla variabile
 #endif
     
     switch (ip->protocol) //Controllo sul protocollo di trasporto
@@ -386,16 +381,16 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
             udp=udp_hdr(skb); //prende l'header UPD dal buffer skb
             slk_udp_handle(ip,udp);
 #ifdef DEBUG //DEBUG
-            //printk(KERN_INFO "*****DEBUG***** Pacchetto UDP \t source:%u \t destination:%u \t lenght:%u byte\n",ntohs(udp->source),ntohs(udp->dest), ntohs(udp->len));
-            //printk(KERN_INFO "*****DEBUG***** udp_traffic: %d \n",slk_info->udp_traffic);
+            printk(KERN_INFO "*****DEBUG***** Pacchetto UDP \t source:%u \t destination:%u \t lenght:%u byte\n",ntohs(udp->source),ntohs(udp->dest), ntohs(udp->len));
+            printk(KERN_INFO "*****DEBUG***** udp_traffic: %d \n",slk_info->udp_traffic);
 #endif
             break;
             
         case 6: //TCP
             slk_tcp_handle(ip,skb);
 #ifdef DEBUG //DEBUG
-           // printk(KERN_INFO "*****DEBUG***** Pacchetto TCP \t source:%d \t destination:%d \n",ntohs(tcp->source),ntohs(tcp->dest));
-            //printk(KERN_INFO "*****DEBUG***** mod_pkt_count: %d \n",slk_info->mod_pkt_count);
+            printk(KERN_INFO "*****DEBUG***** Pacchetto TCP \t source:%d \t destination:%d \n",ntohs(tcp->source),ntohs(tcp->dest));
+            printk(KERN_INFO "*****DEBUG***** mod_pkt_count: %d \n",slk_info->mod_pkt_count);
 #endif
             break;
             
@@ -422,12 +417,16 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 #ifdef DEBUG //DEBUG
         printk(KERN_INFO "*****DEBUG***** udp_avg_bdw: %d \t new_adv_wnd : %d \n",slk_info->udp_avg_bdw,slk_info->new_adv_wnd);
 #endif
+       
+#ifdef LOG
         read_lock(&rwlock_pid);
         if(pid!=-1) //Se è stato inizializzato il pid del processo di log invio messaggi di log
         {
             log_loginfo();
         }
         read_unlock(&rwlock_pid);
+#endif
+
     }
     return NF_ACCEPT; //accetta tutti i pacchetti, possono continuare la loro transazione
 }
@@ -443,7 +442,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 static void slk_init_hook(void)
 {
     nfho.hook = hook_func; //definisce la funzione da richiamare nell'hook
-    nfho.hooknum =NF_INET_POST_ROUTING ; //Indica in che punto del protocollo è in ascolto l'hook
+    nfho.hooknum =NF_INET_FORWARD ; //Indica in che punto del protocollo è in ascolto l'hook
     nfho.pf = PF_INET; //definisce la famiglia di protocolli da usare
     nfho.priority = NF_IP_PRI_FIRST; //indica la priorità dell'hook
     printk(KERN_INFO "Inizializzzione Kernel hook completata \n");
@@ -475,10 +474,10 @@ static void slk_init_data(void)
     
     //Parametri in ingresso
     if(up_bwt>0)
-        slk_info->max_bwt=up_bwt *1024;
+        slk_info->max_bwt=up_bwt *1024; //Byte al secondo
         
     if(adv_wnd>0)
-        slk_info->const_adv_wnd=adv_wnd;
+        slk_info->const_adv_wnd=adv_wnd; //Byte
         
     printk(KERN_INFO "Inizializzazione variabili completata \n");
 }
@@ -529,10 +528,13 @@ static void log_recv_msg(struct sk_buff *skb)
  ************************************************************************************************************/
 static int __init mod_init(void)
 {
+    #ifdef LOG
     //Struttura necessaria per la creazione del socket
     struct netlink_kernel_cfg cfg = {
         .input = log_recv_msg,
     };
+    #endif
+
     
     printk(KERN_INFO "Inizializzazione modulo SLK: SAP-LAW KERNEL \n");
 
@@ -540,12 +542,14 @@ static int __init mod_init(void)
     slk_init_data();    //inizializzazione delle variabili del programma
     slk_init_spinlock();    //Inizializzazione semafori e spinlock
 
+    #ifdef LOG
     nl_sk = netlink_kernel_create(&init_net, NETLINK_TEST, &cfg); //Crea il socket netlink
     if (!nl_sk)
     {
         printk(KERN_ALERT "Error creating socket.\n");
         return -10;
     }
+    #endif
     
     nf_register_hook(&nfho); //registra in ascolto l'hook
     

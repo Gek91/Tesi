@@ -1,0 +1,6 @@
+set terminal jpeg
+set output outputname
+set xlabel "Pacchetto"
+set ylabel "Dim"
+
+plot 'bbbbb.txt' using 1 with dots title "Window"

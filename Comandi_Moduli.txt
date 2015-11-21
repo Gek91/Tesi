@@ -1,0 +1,15 @@
+Caricare il modulo
+Dopo aver compilato il modulo con il make verrà restituito un file nomefilecodice.ko
+
+Per caricare il modulo viene usato il comando:
+sudo insmod nomemodulo.ko
+
+Per controllare se il modulo è stato caricato si può usare:
+lsmod | grep nomemodulo
+
+Per scaricare il modulo si utilizza:
+sudo rmmod nomemodulo.ko
+
+Per controllare il log in cui solitamente vengono stampati gli output (kern.log)
+tail /var/log/kern.log
+tail permette di leggere le ultime righe del log 
