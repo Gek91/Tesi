@@ -1,7 +1,12 @@
 
 #include "SLK.h"
 
-//TO DO: GESTIONE FLUSSI TCP Più INTELLIGENTE
+//TO DO: GESTIONE FLUSSI TCP Più INTELLIGENTE Test da fare
+//Conteggio pacchetti
+//conteggio totale traffico udp
+//conteggio flussi TCP
+//controllo banda udp corrente
+//controllo magic formula
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -293,9 +298,9 @@ static void slk_magic_formula(void)
         slk_info->new_adv_wnd=0;
     if( slk_info->new_adv_wnd > 65535 ) //TCP advertised windows ha valori da 0 a 65535
         slk_info->new_adv_wnd = 65535;
-        else
-            if(slk_info->new_adv_wnd < 0 ) //Evita che la advertised windows sia un valore nullo
-                slk_info->new_adv_wnd = (int)(slk_info->max_bwt / 20); //CONTROLLARE SE IL VALORE 20 è ADATTO
+    else
+        if(slk_info->new_adv_wnd < 0 ) //Evita che la advertised windows sia un valore nullo
+            slk_info->new_adv_wnd = (int)(slk_info->max_bwt / 20); //CONTROLLARE SE IL VALORE 20 è ADATTO
     write_unlock(&rwlock_new_adv_wnd); //Rilascia la risorsa new_adv_wnd
     spin_unlock(&lock_num_tcp_flows); //Rilascia la risorsa num_tcp_flows
 }
@@ -417,7 +422,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 #ifdef DEBUG //DEBUG
         printk(KERN_INFO "*****DEBUG***** udp_avg_bdw: %d \t new_adv_wnd : %d \n",slk_info->udp_avg_bdw,slk_info->new_adv_wnd);
 #endif
-       
+        
 #ifdef LOG
         read_lock(&rwlock_pid);
         if(pid!=-1) //Se è stato inizializzato il pid del processo di log invio messaggi di log
@@ -426,7 +431,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
         }
         read_unlock(&rwlock_pid);
 #endif
-
+        
     }
     return NF_ACCEPT; //accetta tutti i pacchetti, possono continuare la loro transazione
 }
@@ -475,10 +480,10 @@ static void slk_init_data(void)
     //Parametri in ingresso
     if(up_bwt>0)
         slk_info->max_bwt=up_bwt *1024; //Byte al secondo
-        
+    
     if(adv_wnd>0)
         slk_info->const_adv_wnd=adv_wnd; //Byte
-        
+    
     printk(KERN_INFO "Inizializzazione variabili completata \n");
 }
 
@@ -528,28 +533,28 @@ static void log_recv_msg(struct sk_buff *skb)
  ************************************************************************************************************/
 static int __init mod_init(void)
 {
-    #ifdef LOG
+#ifdef LOG
     //Struttura necessaria per la creazione del socket
     struct netlink_kernel_cfg cfg = {
         .input = log_recv_msg,
     };
-    #endif
-
+#endif
+    
     
     printk(KERN_INFO "Inizializzazione modulo SLK: SAP-LAW KERNEL \n");
-
+    
     slk_init_hook();    //Definisce i valori della struttura dati che implementa l'hook
     slk_init_data();    //inizializzazione delle variabili del programma
     slk_init_spinlock();    //Inizializzazione semafori e spinlock
-
-    #ifdef LOG
+    
+#ifdef LOG
     nl_sk = netlink_kernel_create(&init_net, NETLINK_TEST, &cfg); //Crea il socket netlink
     if (!nl_sk)
     {
         printk(KERN_ALERT "Error creating socket.\n");
         return -10;
     }
-    #endif
+#endif
     
     nf_register_hook(&nfho); //registra in ascolto l'hook
     
@@ -583,13 +588,15 @@ TCPid_t* free_TCP_flow_list(TCPid_t* list_elem)
 static void __exit mod_exit(void)
 {
     free_TCP_flow_list(tcp_flow_list); //Libera la memoria utilizzata per la gestione della lista dei flussi TCP attivi
-    kfree(slk_info); //libera la memoria allocata per slk_info
+    
     nf_unregister_hook(&nfho); //rilascia l'hook
     netlink_kernel_release(nl_sk); //Rilascia il socket
     printk(KERN_INFO "Totale pacchetti ricevuti: %d\n", slk_info->tot_pkt_count );
     printk(KERN_INFO "Totale traffico UDP(): %d byte\n",slk_info->udp_traffic);
     printk(KERN_INFO "Totale pacchetti modificati : %d \n", slk_info->mod_pkt_count);
     printk(KERN_INFO "Rimozione del modulo SKL: SAP-LAW KERNEL \n");
+    
+    kfree(slk_info); //libera la memoria allocata per slk_info
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
