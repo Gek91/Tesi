@@ -454,7 +454,7 @@ static void slk_init_hook(void)
  ************************************************************************************************************/
 static void slk_init_data(void)
 {
-    slk_info=kmalloc(sizeof(TCPid_t),GFP_KERNEL); //alloca la memoria per slk_info
+    slk_info=kmalloc(sizeof(SLK_DATA),GFP_KERNEL); //alloca la memoria per slk_info
     
     slk_info->max_bwt=1000*1024; //byte/s
     slk_info->last_udp_traffic = 0; //Valore del traffico UDP all'ultima lettura

@@ -95,7 +95,7 @@ typedef struct TCPid
 } TCPid_t;
 
 static SLK_DATA *slk_info;
-static TCPid_t* tcp_flow_list;
+static TCPid_t *tcp_flow_list;
 
 //Struttura dati Netfilter per la definizione di un hook
 static struct nf_hook_ops nfho;
