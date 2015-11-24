@@ -34,7 +34,7 @@ static int slk_check_update_SL(void)
  - ip: puntatore alla struttura che contiene l'header ip
  - udp: puntatore alla struttura che contiene l'header udp
  ************************************************************************************************************/
-static void slk_udp_handle(struct iphdr *ip, struct udphdr *udp)
+static void slk_udp_handle(struct iphdr *ip)
 {
     spin_lock(&lock_udp_traffic); //blocco ulteriori accessi alla risorsa udp_traffic
     slk_info->udp_traffic += ( ntohs( (u_int16_t) ip->tot_len) + 14 ); //aggiungo al traffico UDP la grandezza di questo pacchetto, comprende oltre al pacchetto UDP anche l'header IP e l'header ethernet (14)
@@ -384,7 +384,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
     {
         case 17: //UDP
             udp=udp_hdr(skb); //prende l'header UPD dal buffer skb
-            slk_udp_handle(ip,udp);
+            slk_udp_handle(ip);
 #ifdef DEBUG //DEBUG
             printk(KERN_INFO "*****DEBUG***** Pacchetto UDP \t source:%u \t destination:%u \t lenght:%u byte\n",ntohs(udp->source),ntohs(udp->dest), ntohs(udp->len));
             printk(KERN_INFO "*****DEBUG***** udp_traffic: %d \n",slk_info->udp_traffic);

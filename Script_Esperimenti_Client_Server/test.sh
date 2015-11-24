@@ -48,6 +48,7 @@ sudo tc qdisc show
 #./slk_exec_esp.sh "slus_testbed_test.txt" "test_send_slk_a1000_rtt_$DL_1.log" "test_recv_sk_a1000_rtt_$DL_1.log" "adv_wnd=1000"
 
 
+scp $RECNAME@$REC:Scrivania/*.log ./
 scp $RECNAME@$REC:Scrivania/D-ITG-2.8.1-r1023/bin/test_recv*.log ./
 sleep 5s
 

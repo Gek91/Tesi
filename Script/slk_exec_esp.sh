@@ -1,3 +1,5 @@
+#!/bin/bash
+
 #
 # Creato da Giacomo Pandini partendo da un lavoro iniziale di Matteo Brunati
 #

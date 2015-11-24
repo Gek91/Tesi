@@ -26,8 +26,10 @@ slus_param=$4
 
 #Esecuzione del programma di ricezione sul client
 ssh -f $RECNAME@$REC "$ITGR"
+#Esecuzione del programma di ricezione sul server
+../D-ITG-2.8.1-r1023/bin/ITGRecv &
 sleep 3s
-
+#Esecuzione di SLUS sull'AP
 ssh -f  $AP "slus $slus_param"
 sleep 3s
 #Esecuzione di tcpdump
@@ -35,13 +37,17 @@ sudo tcpdump -i $INT -w $ditg_client_log_file".dmp" &
 sleep 3s
 #Esecuzione del programma di invio sul server
 $ITGS $ditg_script -l $ditg_serv_log_file -x $ditg_client_log_file &
+#Esecuzione programma di invio sul lato client
+ssh -f $RECNAME@$REC "cd Scrivania && ./script $ditg_client_log_file "
 sleep 200s
 #Terminazione di tcpdump
 sudo killall tcpdump
 sleep 3s
-
+#Terminazione di SLUS sull'AP
 ssh -f $AP "killall slus && /usr/sbin/iptables -t mangle -F"
 sleep 3s
 #Terminazione del programma di ricezione sul client
 ssh -f $RECNAME@$REC "killall ITGRecv"
+#Terminazione del programma di ricezione sul server
+sudo killall ITGRecv
 sleep 3s

@@ -1,0 +1,6 @@
+set terminal jpeg
+set output outputname
+set xlabel "Sec"
+set ylabel "Sec"
+
+plot [ ] [0:0.16] 'iat_out' using 2:3 with lines lw 1 title "Inter Arrival Time"
