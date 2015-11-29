@@ -42,14 +42,14 @@ static void slk_udp_handle(struct iphdr *ip)
 }
 
 /*************************************************************************************************************
- searchTCPflow()
+ search_TCP_flow()
  Controlla se il flusso passato in ingresso attraverso i 4 valori che lo identificano è già presente nella lista dei flussi TCP attivi. Se non lo è lo inserisce nella lista aumentando il contatore dei flussi TCP
  - ipsource: indirizzo IP di provenienza
  - ipdest: indirizzo IP di destinazione
  - tcpsource: porta di provenienza
  - tcpdest: porta di destinazione
  *************************************************************************************************************/
-static void searchTCPflow(u_int32_t ipsource, u_int32_t ipdest, u_int16_t tcpsource, u_int16_t tcpdest)
+static void search_TCP_flow(u_int32_t ipsource, u_int32_t ipdest, u_int16_t tcpsource, u_int16_t tcpdest)
 {
     int iterate=1; //Variabile utilizzata per continuare o fermare il ciclo while
     TCPid_t* it;
@@ -135,7 +135,7 @@ static void slk_tcp_handle(struct iphdr *ip, struct sk_buff *skb)
     tcp=tcp_hdr(skb); //prende l'header TCP dal buffer skb
     if (slk_info->const_adv_wnd < 0)// se non è impostato un valore fisso di advertised window
     {
-        searchTCPflow(ntohs(ip->saddr),ntohs(ip->daddr),ntohs(tcp->source),ntohs(tcp->dest)); //controlla la presenza del flusso relativo al pacchetto, se non esiste lo inserisce
+        search_TCP_flow(ntohs(ip->saddr),ntohs(ip->daddr),ntohs(tcp->source),ntohs(tcp->dest)); //controlla la presenza del flusso relativo al pacchetto, se non esiste lo inserisce
         
         read_lock(&rwlock_new_adv_wnd); //Riserva in lettura la risorsa new_adv_wnd
         if( ntohs (tcp->window) > (u_int16_t)slk_info->new_adv_wnd ) //imposta il valore minore tra quello attuale e quello calcolato con SAP-LAW
