@@ -31,6 +31,8 @@
 #define LAN "br-lan"
 #define WIFI "br-wifi"
 
+//Definisce la posizione dell'hook
+#define NETFILTER_HOOK_POS NF_INET_FORWARD
 
 //Valori di tempo che aiutano a modificare il valore che definisce ogni quanti pacchetti eseguire il calcolo della SAP-LAW
 #define SLK_TRAFFIC_STAT_TIMER_UP 3000 //Upperbound

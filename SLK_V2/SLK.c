@@ -260,17 +260,23 @@ static void slk_udp_bdw_update(int* udp_traffic, int* last_udp_traffic,int* udp_
 static void slk_magic_formula(int* num_tcp_flows,int* new_adv_wnd,int* max_bwt, int* udp_avg_bdw)
 {
     //Calcolo della Magic Formula della SAP-LAW
-    if(*num_tcp_flows!=0) //se il numero dei flussi TCP è diverso da 0
+    if(*num_tcp_flows != 0) //se il numero dei flussi TCP è diverso da 0
     {
         *new_adv_wnd = ( *max_bwt - *udp_avg_bdw ) / *num_tcp_flows;
+        //#ifdef DEBUG //DEBUG
+        printk(KERN_INFO "*****DEBUG***** max_bwt: %d udp_avg_bdw : %d num_tcp_flow: %d =  new_adv_wnd : %d\n", *max_bwt,*udp_avg_bdw, *num_tcp_flows, *new_adv_wnd);
+        //#endif
     }
     else
         *new_adv_wnd=0;
     if( *new_adv_wnd > 65535 ) //TCP advertised windows ha valori da 0 a 65535
         *new_adv_wnd = 65535;
     else
-        if(*new_adv_wnd < 0 ) //Evita che la advertised windows sia un valore nullo
-            *new_adv_wnd = (int)(*max_bwt / 20); //CONTROLLARE SE IL VALORE 20 è ADATTO
+    {
+        int minval=(int)(*max_bwt / 2000);
+        if(*new_adv_wnd < minval ) //Evita che la advertised windows sia un valore nullo
+            *new_adv_wnd = minval;
+    }
 }
 
 /************************************************************************************************************
@@ -278,7 +284,7 @@ static void slk_magic_formula(int* num_tcp_flows,int* new_adv_wnd,int* max_bwt, 
  
  ************************************************************************************************************/
 
-static TCPid_t* slk_main_exe(SLK_DATA* slk_info, TCPid_t* tcp_flow_list, struct sk_buff *skb)
+static TCPid_t* slk_main_exe(SLK_DATA* slk_info, TCPid_t* tcp_flow_list, struct sk_buff *skb, int* new_adv_wnd)
 {
     //Strutture dati per la manipolazione dei pacchetti
     struct iphdr *ip  = NULL;
@@ -306,7 +312,7 @@ static TCPid_t* slk_main_exe(SLK_DATA* slk_info, TCPid_t* tcp_flow_list, struct 
             break;
             
         case 6: //TCP
-            tcp_flow_list=slk_tcp_handle(&slk_info->const_adv_wnd, &slk_info->num_tcp_flows, &slk_info->new_adv_wnd, &slk_info->mod_pkt_count,tcp_flow_list,ip,skb);
+            tcp_flow_list=slk_tcp_handle(&slk_info->const_adv_wnd, &slk_info->num_tcp_flows, new_adv_wnd, &slk_info->mod_pkt_count,tcp_flow_list,ip,skb);
 #ifdef DEBUG //DEBUG
             printk(KERN_INFO "*****DEBUG***** Pacchetto TCP \t source:%d \t destination:%d \n",ntohs(tcp->source),ntohs(tcp->dest));
             printk(KERN_INFO "*****DEBUG***** mod_pkt_count: %d \n",slk_info->mod_pkt_count);
@@ -350,7 +356,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
     if(strcmp(in->name,LAN) == 0)
     {
         spin_lock(&lock_lan);
-        tcp_flow_list_lan=slk_main_exe(slk_info_lan, tcp_flow_list_lan,skb); //Esecuzione algoritmo con pacchetti provenineti da lato server
+        tcp_flow_list_lan=slk_main_exe(slk_info_lan, tcp_flow_list_lan,skb,&slk_info_wifi->new_adv_wnd); //Esecuzione algoritmo con pacchetti provenineti da lato server
         spin_unlock(&lock_lan);
 
     }
@@ -359,7 +365,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
         if(strcmp(in->name,WIFI) == 0)
         {
             spin_lock(&lock_wifi);
-            tcp_flow_list_wifi=slk_main_exe(slk_info_wifi, tcp_flow_list_wifi,skb); //Esecuzione algoritmo con pacchetti provenienti da lato client
+            tcp_flow_list_wifi=slk_main_exe(slk_info_wifi, tcp_flow_list_wifi,skb,&slk_info_lan->new_adv_wnd); //Esecuzione algoritmo con pacchetti provenienti da lato client
             spin_unlock(&lock_wifi);
         }
     }
@@ -377,7 +383,7 @@ unsigned int hook_func(unsigned int hooknum, struct sk_buff *skb, const struct n
 static void slk_init_hook(void)
 {
     nfho.hook = hook_func; //definisce la funzione da richiamare nell'hook
-    nfho.hooknum =NF_INET_FORWARD ; //Indica in che punto del protocollo è in ascolto l'hook
+    nfho.hooknum = NETFILTER_HOOK_POS; //Indica in che punto del protocollo è in ascolto l'hook
     nfho.pf = PF_INET; //definisce la famiglia di protocolli da usare
     nfho.priority = NF_IP_PRI_FIRST; //indica la priorità dell'hook
     printk(KERN_INFO "Inizializzzione Kernel hook completata \n");
