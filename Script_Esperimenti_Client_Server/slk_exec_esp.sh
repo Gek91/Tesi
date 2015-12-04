@@ -36,7 +36,7 @@ ssh -f $AP "insmod slk $slk_param"
 sleep 3s
 #Esecuzione di tcpdump
 sudo tcpdump -i $INT -w $ditg_client_log_file".dmp" & #server
-ssh -f $RECNAME@$REC "echo $CLIENTPWD | sudo -S tcpdump -i $INTS -w client_${ditg_client_log_file}.dmp" #client
+ssh -f $RECNAME@$REC "cd Scrivania/D-ITG-2.8.1-r1023/bin/ && echo $CLIENTPWD | sudo -S tcpdump -i $INTS -w client_${ditg_client_log_file}.dmp" #client
 sleep 3s
 #Esecuzione del programma di invio sul server
 $ITGS $ditg_script -l $ditg_serv_log_file -x $ditg_client_log_file &

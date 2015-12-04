@@ -54,7 +54,7 @@ ssh -f $RECNAME@$REC "cd Scrivania && echo lubuntu | sudo -S ./tc_start.sh"
 sudo tc qdisc del dev $INT root #server
 ssh -f $RECNAME@$REC "echo lubuntu | sudo -S tc qdisc del dev enp0s3 root" #client
 
-scp $RECNAME@$REC:Scrivania/*.dmp ./
+scp $RECNAME@$REC:Scrivania/D-ITG-2.8.1-r1023/bin/*.dmp ./
 scp $RECNAME@$REC:Scrivania/*.log ./
 scp $RECNAME@$REC:Scrivania/D-ITG-2.8.1-r1023/bin/test_recv*.log ./
 sleep 5s
