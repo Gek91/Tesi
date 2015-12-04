@@ -48,10 +48,16 @@ gnuplot -e "outputname='${output}'" iat_sec
 rm $flow
 rm iat_out
 done
-# advertised window
+# advertised window server
 tcptrace -p $log_file".dmp" > aaaaa.txt
 ./slus_advwnd aaaaa.txt bbbbb.txt
-output="window"_$log_file".jpeg"
+output="window_server"_$log_file".jpeg"
+gnuplot -e "outputname='${output}'" window
+rm aaaaa.txt bbbbb.txt
+# advertised windows client
+tcptrace -p client_${log_file}.dmp > aaaaa.txt
+./slus_advwnd aaaaa.txt bbbbb.txt
+output="window_client"_$log_file".jpeg"
 gnuplot -e "outputname='${output}'" window
 rm aaaaa.txt bbbbb.txt
 

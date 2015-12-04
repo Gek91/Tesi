@@ -26,6 +26,9 @@ sudo tc qdisc add dev $INT parent 1:1 handle 10: netem delay $DL
 sudo tc qdisc add dev $INT parent 1:2 handle 20: netem delay $DL
 sudo tc qdisc show
 
+#TC client
+ssh -f $RECNAME@$REC "cd Scrivania && echo lubuntu | sudo -S ./tc_start.sh"
+
 #esecuzione slus
 ./slus_exec_esp.sh "slus_testbed_test.txt" "test_send_noslus_rtt_$DL_1.log" "test_recv_noslus_rtt_$DL_1.log"
 
@@ -47,14 +50,16 @@ sudo tc qdisc show
 #./slk_exec_esp.sh "slus_testbed_test.txt" "test_send_slk_a800_rtt_$DL_1.log" "test_recv_slk_a800_rtt_$DL_1.log" "adv_wnd=800"
 #./slk_exec_esp.sh "slus_testbed_test.txt" "test_send_slk_a1000_rtt_$DL_1.log" "test_recv_sk_a1000_rtt_$DL_1.log" "adv_wnd=1000"
 
+#Eliminazione del collo di bottiglia
+sudo tc qdisc del dev $INT root #server
+ssh -f $RECNAME@$REC "echo lubuntu | sudo -S tc qdisc del dev enp0s3 root" #client
 
+scp $RECNAME@$REC:Scrivania/*.dmp ./
 scp $RECNAME@$REC:Scrivania/*.log ./
 scp $RECNAME@$REC:Scrivania/D-ITG-2.8.1-r1023/bin/test_recv*.log ./
 sleep 5s
 
 ./slus_make_dir_all_plots.sh
-
-sudo tc qdisc del dev $INT root
 
 rm *.log
 rm *.dmp
