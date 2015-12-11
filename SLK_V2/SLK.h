@@ -1,25 +1,30 @@
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/* SLK.h
+ *
+ * Giacomo Pandini , 2015
+ *
+ */
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 #ifndef SLK_H_
 #define SLK_H_
 
-//Header per la programmazione kernel
+//Headers for kernel function
 #include <linux/kernel.h>
 #include <linux/module.h>
-//Header per la manipolazione dei pacchetti
+//Header for packet mangling
 #include <linux/netfilter_ipv4.h>
 #include <linux/skbuff.h>
 #include <linux/udp.h>
 #include <linux/tcp.h>
 #include <linux/ip.h>
-#include <linux/moduleparam.h> //Necessario per la lettura di parametri in ingresso al programma
-#include <linux/errno.h> //Definisce alcuni codici di errore
-#include <linux/time.h> //per la gestione dei timer
-#include <linux/spinlock.h> //per la definizione degli spinlock
-#include <linux/types.h> //Necessario per usare dei tipi di dato in formato kernel
-#include <linux/slab.h> //necessario per la kmalloc
-#include <linux/gfp.h> //flag della kmalloc , DA VERIFICARE
-#include <linux/string.h> //per la memcpy
-#include <net/sock.h> //netlink
-#include <linux/netlink.h> //netlink
+#include <linux/moduleparam.h>      //Input parameter for the program
+#include <linux/errno.h>            //Error codes
+#include <linux/time.h>             //Timer management
+#include <linux/spinlock.h>         //Spinlock
+#include <linux/types.h>            //Kernel data type
+#include <linux/slab.h>             //necessario per la kmalloc
+#include <linux/gfp.h>              //flag della kmalloc , DA VERIFICARE
 
 #include <net/ip.h>
 #include <net/tcp.h>
@@ -27,47 +32,44 @@
 //Flag
 //#define DEBUG 1
 
-//Interfacce
+//Interfaces on the device
 #define LAN "br-lan"
 #define WIFI "br-wifi"
 
-//Definisce la posizione dell'hook
+//Netfilter Kernel hook position
 #define NETFILTER_HOOK_POS NF_INET_FORWARD
 
-//Valori di tempo che aiutano a modificare il valore che definisce ogni quanti pacchetti eseguire il calcolo della SAP-LAW
+//Time bounds used in the SAP-LAW calculation
 #define SLK_TRAFFIC_STAT_TIMER_UP 3000 //Upperbound
 #define SLK_TRAFFIC_STAT_TIMER_DOWN 1500 //Lowerbound
-
-#define SLK_TCP_KEEPALIVE_TIMER 75000 //definisce il limite del timer KeepAlive, oltre quel valore il flusso TCP viene eliminato dalla memoria
+#define SLK_TCP_KEEPALIVE_TIMER 75000 //TCP KeepAlive timer, used in TCP flows' structure counting
 
 /*********************************************************************************************************
- VARIABILI DEL PROGRAMMA UTILI A SLK:
+ SLK VARIABLES:
  * Struct SLK_DATA
- * Struttura che contiene tutte le variabili utili all'esecuzione del programma e al calcolo della SAP-LAW
- max_bwt : Max bandwidth usata per la formula del programma, passata esternamente
- last_udp_traffic : Valore del traffico UPD in Byte l'ultima volta che è stato verificato
- udp_traffic : Valore del traffico UDP totale in Byte
- num_tcp_flows : numero di flussi TCP attualmente passanti
- udp_avg_bdw : bandwidth media in byte/s utilizzata per il calcolo della formula
- new_adv_wnd : valore dell'advertised window di TCP calcolata con SAP-LAW
- const_adv_wnd : variabile che contiene un eventuale valore fisso della adverstised windows impostato dall'utente
- last_check : indica quando è stata calcolata per l'ultima volta la bandwidth UPD
- 
- tot_pkt_count : Contatore numero totale di pacchetti
- traffic_stat_timer : Definisce ogni quanti pacchetti eseguire la formula
+ The structure contains all the variables needed for execute the program and calculate the SAP-LAW for one interface.
+ - max_bwt : Max bandwidth, used in the magik formula, passed from the user
+ - last_udp_traffic : udp_traffic value saved during last SAP-LAW calculation
+ - udp_traffic : Total UDP traffic in Byte
+ - num_tcp_flows : Number of actual TCP flows
+ - udp_avg_bdw : Average bandwidth in byte/s, used in the SAP-LAW calculation
+ - new_adv_wnd : TCP advertised window value calculated in magik formula
+ - const_adv_wnd : Fixed TCP adverstised windows, choosed by the user
+ - last_check : timeval struct, time value of the last upd_avg_bdw calculation
+ - tot_pkt_count : Total packet counter
+ - mod_pkt_count : Modified packet counter
+ - traffic_stat_timer : It defines after how many packet execute the magik formula, dynamically updated
  
  * Struct TCPid_t
- * Struttura che definisce la lista concatenata che contiene i flussi TCP presenti al momento. Ogni elemento definisce un flusso TCP attraverso 4 valori che lo identificano univocamente
- ipsource : indirizzo IP di provenienza
- ipdest : indirizzo IP di destinazione
- tcpsource : porta di provenienza
- tcpdest : porta di destinazione
- timer : timer di keepalive
- next : puntatore al successivo elemento della lista dei flussi, NULL se è l'ultimo elemento
+ The structure defines a linked list used for calculate the actual number of TCP flows. Each list element identifies univocally one TCP flow with 4 values.
+ - ipsource : IP source adress
+ - ipdest : IP destination adress
+ - tcpsource : Source port
+ - tcpdest : Destination port
+ - timer : Keepalive timer
+ - next : Pointer to the next element of the list, NULL if the last element
  
- tcp_flow_list : lista concatenata contenente i flussi TCP correntemente attivi
  **********************************************************************************************************/
-
 
 typedef struct
 {
@@ -96,16 +98,17 @@ typedef struct TCPid
     struct TCPid* next;
 } TCPid_t;
 
+// Lan interface data
 static SLK_DATA *slk_info_lan;
 static TCPid_t* tcp_flow_list_lan;
-
+// Wifi interface data
 static SLK_DATA *slk_info_wifi;
 static TCPid_t* tcp_flow_list_wifi;
 
-//Struttura dati Netfilter per la definizione di un hook
+// Netfilter data struct for define an hook
 static struct nf_hook_ops nfho;
 
-//Spinlock per l'accesso alle strutture dati
+//Spinlock
 static spinlock_t lock_lan;
 static spinlock_t lock_wifi;
 
@@ -113,13 +116,12 @@ static spinlock_t lock_wifi;
 static int up_bwt=-1;
 static int adv_wnd=-1;
 
-//definisce che riceverà in ingresso un parametro quando il programma è eseguito
-module_param(up_bwt, int, 0 ); //prende in ingresso il parametro, il suo tipo e i permessi
-MODULE_PARM_DESC(up_bwt, "Parametro in ingresso max_bwt"); //descrittore del parametro
+//Input parameters, defines the name of the parameters, their type and the permits
+module_param(up_bwt, int, 0 ); //max bandwidth
+MODULE_PARM_DESC(up_bwt, "Input parameter max_bwt");
 
-//definisce che riceverà in ingresso un parametro quando il programma è eseguito
-module_param(adv_wnd, int, 0 ); //prende in ingresso il parametro, il suo tipo e i permessi
-MODULE_PARM_DESC(adv_wnd, "Parametro in ingresso const_adv_wnd"); //descrittore del parametro
+module_param(adv_wnd, int, 0 ); //constant advertised window
+MODULE_PARM_DESC(adv_wnd, "Input parameter const_adv_wnd");
 
 
 #endif

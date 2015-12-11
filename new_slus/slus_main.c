@@ -510,9 +510,12 @@ static int slus_init_iptables() {
 #else
     // The iptables bin path is needed in order to execute SAP-LAW correctly from
     // a remote ssh connection (done for the testbed)
-    char *cmd_init_iptables = "/usr/sbin/iptables -t mangle -F && "
+    /*char *cmd_init_iptables = "/usr/sbin/iptables -t mangle -F && "
     "/usr/sbin/iptables -t mangle -I "SLUS_IPT_CHAIN" 1 -p tcp --tcp-flags ALL ACK -j QUEUE && "
-    "/usr/sbin/iptables -t mangle -I "SLUS_IPT_CHAIN" 1 -p udp -j QUEUE";
+    "/usr/sbin/iptables -t mangle -I "SLUS_IPT_CHAIN" 1 -p udp -j QUEUE";*/
+    char *cmd_init_iptables = "/usr/sbin/iptables -t mangle -F && "
+     "/usr/sbin/iptables -t mangle -I "SLUS_IPT_CHAIN" 1 -p tcp --tcp-flags ALL ACK -j NFQUEUE --queue-num 2 && "
+     "/usr/sbin/iptables -t mangle -I "SLUS_IPT_CHAIN" 1 -p udp -j NFQUEUE --queue-num 2";
 #endif
     
     if (system(cmd_init_iptables) < 0) {
