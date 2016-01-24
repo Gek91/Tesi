@@ -1,4 +1,4 @@
- /*
+/*
  *	slus_main.c: main source of the SAP-LAW user space application.
  *				 It house the main structure of the application:
  *				 	- application initializer
@@ -184,7 +184,7 @@ static TCPid_t* slus_mod_tcp_pktHdr(TCPid_t *tcp_flow_list ,int* num_tcp_flows,i
         fprintf(stderr, "ERROR: something went wrong calculating TCP packet's checksum\n");
     }
     dbg_printf("n_chk=%u\tn_wnd=%u\n", ntohs(p_tcphdr->check), ntohs(p_tcphdr->window));
-
+    
     return tcp_flow_list;
 }
 
@@ -229,7 +229,7 @@ static TCPid_t* slus_set_tcp_flows_num(TCPid_t* tcp_flow_list, int *num_tcp_flow
         else
         {
             prev=it;
-            it=prev->next; 
+            it=prev->next;
         }
     }
     return tcp_flow_list;
@@ -290,7 +290,7 @@ static int slus_calc_udp_bdw(int *udp_traffic, int *last_udp_traffic, int *udp_a
 
 /************************************************************************************************************
  slus_cb()
- Call back function, used every time a packet is read from the queue 
+ Call back function, used every time a packet is read from the queue
  ************************************************************************************************************/
 static int slus_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
                    struct nfq_data *nfa, void *data)
@@ -326,7 +326,7 @@ static int slus_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
     slus_info->tot_pkt_count++;
     
     switch (p_iphdr->protocol) {
-        case 6:		// TCP packet
+            case 6:		// TCP packet
             // Retrieve traffic informations for the formula calculation
             //		slus_info->tcp_traffic += (len - 20);  20 byte of the packet length are for the IP header.
             p_tcphdr = (struct tcphdr *)(pktHdr + sizeof(struct iphdr));  // ##### DEBUG
@@ -335,7 +335,7 @@ static int slus_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
             pthread_mutex_unlock(slus_info->other_wnd_mtx);
             slus_info->mod_pkt_count++;
             break;
-        case 17:	// UDP packet
+            case 17:	// UDP packet
             // Retrieve traffic informations: len includes UDP data & header and IP
             // header, 14 is the Ethernet header length
             slus_info->udp_traffic += (len + 14); // Packet length includes 20 byte of IP header.
@@ -351,7 +351,7 @@ static int slus_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
         struct timeval t;
         gettimeofday(&t,NULL);
         slus_info->tcp_flow_list=slus_set_tcp_flows_num(slus_info->tcp_flow_list,&slus_info->num_tcp_flows,t);
-
+        
         if (slus_calc_udp_bdw(&slus_info->udp_traffic,&slus_info->last_udp_traffic,&slus_info->udp_avg_bdw,&slus_info->last_check,&slus_info->traffic_stat_timer))
         {
             fprintf(stderr, "ERROR: Can't set UDP average Bandwidth\n");
@@ -365,7 +365,7 @@ static int slus_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
                        slus_info->max_bwt, slus_info->udp_avg_bdw, slus_info->num_tcp_flows, slus_info->new_adv_wnd);
         }
         else
-            slus_info->new_adv_wnd=0;
+        slus_info->new_adv_wnd=0;
         if (slus_info->new_adv_wnd > 65535) {
             // The TCP window parameter is from 0 to 65535
             slus_info->new_adv_wnd = 65535;
@@ -373,7 +373,7 @@ static int slus_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
         else {
             int minval=(int)(slus_info->max_bwt / 2000);
             if(slus_info->new_adv_wnd < minval)
-                slus_info->new_adv_wnd = minval;
+            slus_info->new_adv_wnd = minval;
         }
         pthread_mutex_unlock(&slus_info->wnd_mtx);
     }
@@ -417,20 +417,20 @@ static int slus_parse_input(int argc, char **argv) {
     while ((opt = getopt(argc, argv, "c:a:b:s:f:dh")) != -1) {
         switch (opt) {
                 break;
-            case 'a':
+                case 'a':
                 slus_info_lan->const_adv_wnd = atoi(optarg);
                 slus_info_wifi->const_adv_wnd = atoi(optarg);
                 bdw_ok++;
                 break;
-            case 'b':
+                case 'b':
                 slus_info_lan->max_bwt = atoi(optarg) * 1024;
                 slus_info_wifi->max_bwt = atoi(optarg) * 1024;
                 bdw_ok++;
                 break;
-            case 'h':
+                case 'h':
                 slus_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
-            case '?':
+                case '?':
                 if (optopt == 'c') {
                     fprintf (stderr, "ERROR: Option -%c requires an argument.\n",
                              optopt);
@@ -502,13 +502,19 @@ static int slus_flush_iptables() {
  ************************************************************************************************************/
 static int slus_init_struct()
 {
-    //LAN
+    slus_info_wifi = NULL;
+    slus_info_wifi = (SLUS_DATA *) malloc(sizeof(SLUS_DATA));
+    if (slus_info_wifi == NULL) {
+        fprintf(stderr, "ERROR: cannot allocate memory\n");
+        return EXIT_FAILURE;
+    }
     slus_info_lan = NULL;
     slus_info_lan = (SLUS_DATA *) malloc(sizeof(SLUS_DATA));
     if (slus_info_lan == NULL) {
         fprintf(stderr, "ERROR: cannot allocate memory\n");
         return EXIT_FAILURE;
     }
+    //LAN
     slus_info_lan->max_bwt = 0;
     slus_info_lan->last_udp_traffic = 0;
     slus_info_lan->udp_traffic = 0;
@@ -530,16 +536,11 @@ static int slus_init_struct()
     slus_info_lan->adv_wnd = &(slus_info_wifi->new_adv_wnd);
     slus_info_lan->mod_pkt_count = 0;
     slus_info_lan->tot_pkt_count = 0;
-    slus_info_wifi->traffic_stat_timer = 1;	// Will be adjusted by adaptive algorithm
-    slus_info_wifi->interface=0;
-
+    slus_info_lan->traffic_stat_timer = 1;	// Will be adjusted by adaptive algorithm
+    slus_info_lan->interface=1;
+    
     //WIFI
-    slus_info_wifi = NULL;
-    slus_info_wifi = (SLUS_DATA *) malloc(sizeof(SLUS_DATA));
-    if (slus_info_wifi == NULL) {
-        fprintf(stderr, "ERROR: cannot allocate memory\n");
-        return EXIT_FAILURE;
-    }
+    
     slus_info_wifi->max_bwt = 0;
     slus_info_wifi->last_udp_traffic = 0;
     slus_info_wifi->udp_traffic = 0;
@@ -561,9 +562,9 @@ static int slus_init_struct()
     slus_info_wifi->adv_wnd = &(slus_info_lan->new_adv_wnd);
     slus_info_wifi->mod_pkt_count = 0;
     slus_info_wifi->tot_pkt_count = 0;
-    slus_info_lan->traffic_stat_timer = 1;	// Will be adjusted by adaptive algorithm
-    slus_info_lan->interface=1;
-
+    slus_info_wifi->traffic_stat_timer = 1;	// Will be adjusted by adaptive algorithm
+    slus_info_wifi->interface=0;
+    
     dbg_printf("Data structure Inizialized\n");
     return EXIT_SUCCESS;
 }
@@ -655,7 +656,7 @@ static int slus_handle_pkts(struct nfq_handle *h)
 TCPid_t* free_TCP_flow_list(TCPid_t* list_elem)
 {
     if(list_elem==NULL)
-        return NULL;
+    return NULL;
     list_elem->next=free_TCP_flow_list(list_elem->next);
     free(list_elem);
     return NULL;
@@ -710,13 +711,13 @@ void* thread_func (void* h)
 }
 
 /************************************************************************************************************
-main()
-AP-LAW user space - Main function
-************************************************************************************************************/
+ main()
+ AP-LAW user space - Main function
+ ************************************************************************************************************/
 int main(int argc, char **argv) {
     struct nfq_handle *h_lan = NULL;
     struct nfq_handle *h_wifi = NULL;
-
+    
     struct nfq_q_handle *qh_lan = NULL;
     struct nfq_q_handle *qh_wifi = NULL;
     
@@ -750,7 +751,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "ERROR: cannot init netfilter userspace queue\n");
         exit(EXIT_FAILURE);
     }
-
+    
     if(pthread_create(&child,NULL,&thread_func,(void*) h_wifi) != 0) //Creates a thread for WIFI execution
     {
         fprintf(stderr, "ERROR: error handling packets\n");

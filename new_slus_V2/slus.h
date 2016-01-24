@@ -1,11 +1,14 @@
 /*
- *	slus_main.h: TODO
+ *	slus_main.h: 
+ *  SAP-LAW user space header file
  *
  *	<2009, Matteo Brunati, saplaw@matteobrunati.net>
  *
  *	This file is published under the GNU GPL version 3 license, or any later
  *	version.
  *
+ *  Corrected and improved by Giacomo Pandini, 2015
+ *  V 2.0
  */
 
 #ifndef SLUS_H_

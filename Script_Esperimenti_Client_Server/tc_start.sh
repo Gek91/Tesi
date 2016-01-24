@@ -1,3 +1,6 @@
+#!/bin/bash
+
+##Valori del bottleneck
 DWN=4000kbit
 RATE=4000kbit
 INT=eth0

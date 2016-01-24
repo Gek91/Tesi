@@ -1,0 +1,6 @@
+set terminal jpeg
+set output "prova.jpeg"
+set xlabel "time (seconds)"
+set ylabel "Segments (cwnd, ssthresh)"
+
+plot 'tcpprobe.out' using 1:7 with lines lw 1 title "snd_cwnd"
