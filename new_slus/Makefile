@@ -1,7 +1,7 @@
 # build slus executable when user executes "make" 
 
 slus: slus_main.o
-	$(CC) $(LDFLAGS) slus_main.o -o slus -lnfnetlink -lnetfilter_queue
+	$(CC) $(LDFLAGS) slus_main.o -o slus -lnfnetlink -lnetfilter_queue -lpthread
 
 slus.o:	slus_main.c
 	$(CC) $(CFLAGS) -c slus_main.c 

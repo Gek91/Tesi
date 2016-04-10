@@ -1,0 +1,62 @@
+
+include $(TOPDIR)/rules.mk
+include $(INCLUDE_DIR)/kernel.mk
+
+PKG_NAME:=slk
+PKG_VERSION:=1
+PKG_RELEASE:=1
+
+PKG_BUILD_DIR := $(BUILD_DIR)/src
+
+include $(INCLUDE_DIR)/package.mk
+
+define KernelPackage/$(PKG_NAME)
+	SUBMENU:=Wireless Drivers
+	TITLE:=slk
+	FILES:=$(PKG_BUILD_DIR)/$(PKG_NAME).$(LINUX_KMOD_SUFFIX)
+	KCONFIG:=
+endef
+
+#EXTRA_KCONFIG:= \
+#	CONFIG_HELLO_MOD=m
+
+#EXTRA_CFLAGS:= \
+#	$(patsubst CONFIG_%, -DCONFIG_%=1, $(patsubst %=m,%,$(filter %=m,$(EXTRA_KCONFIG)))) \
+#	$(patsubst CONFIG_%, -DCONFIG_%=1, $(patsubst %=y,%,$(filter %=y,$(EXTRA_KCONFIG)))) \
+
+MAKE_OPTS:= \
+	ARCH="$(LINUX_KARCH)" \
+	CROSS_COMPILE="$(TARGET_CROSS)" \
+	SUBDIRS="$(PKG_BUILD_DIR)" #\
+#	EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
+#	$(EXTRA_KCONFIG)
+
+define Build/Prepare
+	@echo "++++++++++++++++++++++++++++++++"
+	@echo "++++++++++++++++++++++++++++++++"
+	@echo "PKG_BUILD_DIR     = $(PKG_BUILD_DIR)"
+	@echo "MAKE_OPTS         = $(MAKE_OPTS)"
+	@echo "EXTRA_CFLAGS      = $(EXTRA_CFLAGS)"
+	@echo "EXTRA_KCONFIG     = $(EXTRA_KCONFIG)"
+	@echo "LINUX_KMOD_SUFFIX = $(LINUX_KMOD_SUFFIX)"
+	@echo "LINUX_DIR         = $(LINUX_DIR)"
+	@echo "LINUX_KARCH       = $(LINUX_KARCH)"
+	@echo "TARGET_CROSS      = $(TARGET_CROSS)"
+	@echo "++++++++++++++++++++++++++++++++"
+	@echo "++++++++++++++++++++++++++++++++"
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) ./src/* $(PKG_BUILD_DIR)/
+endef
+
+define Build/Compile
+	$(MAKE) -C "$(LINUX_DIR)" \
+		$(MAKE_OPTS) \
+		modules
+endef
+
+define Package/slk/install
+	$(INSTALL_DIR) $(1)/bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/slk $(1)/bin/
+endef
+
+$(eval $(call KernelPackage,$(PKG_NAME)))

@@ -1,0 +1,40 @@
+##########################################################
+# OpenWrt Makefile for slus (SAP-LAW user space) program
+# SAP-LAW - Smart Access Point with Limited Advertised Window
+#
+# Matteo Brunati <mattbrun05@gmail.com>
+# 15-08-2009
+# 
+##############################################
+
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=slus
+PKG_RELEASE:=alpha
+
+PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
+
+include $(INCLUDE_DIR)/package.mk
+
+define Package/slus
+	SECTION:=net
+	CATEGORY:=Network
+	TITLE:=slus -- SAP-LAW user space
+	DEPENDS:= +libnfnetlink +libnetfilter-queue +libpthread
+endef
+
+define Package/slus/description
+	SAP-LAW user space implementation: Smart Access Point With Limited Advertised Window
+endef
+
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) ./src/* $(PKG_BUILD_DIR)/
+endef
+
+define Package/slus/install
+	$(INSTALL_DIR) $(1)/bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/slus $(1)/bin/
+endef
+
+$(eval $(call BuildPackage,slus))
